@@ -84,9 +84,11 @@ class MoonLight(object):
     def _load_train_data(self):
         train_files = self._train_file_names
         train_dataset = data.CsvDataset(train_files, record_defaults=DataFiles._record_defaults, header=True)
+        train_dataset = train_dataset.map(lambda x: (x[1], x[1:]))
         train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=[])
         train_iterator = train_dataset.make_initializable_iterator()
         self._train_batch = train_iterator.get_next()
+
 
 if __name__ == "__main__":
     ml = MoonLight()
@@ -97,3 +99,9 @@ if __name__ == "__main__":
         features = tf.constant(["他", "我", "and", "你"])
         ids = ml._table.lookup(features)
         print(sess.run(ids))
+        ml._load_train_data()
+        while True:
+            try:
+                print(sess.run(ml._train_batch))
+            except tf.errors.OutOfRangeError:
+                break
