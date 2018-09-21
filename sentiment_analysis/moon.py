@@ -9,6 +9,8 @@ email: diqiuzhuanzhuan@gmail.com
 import tensorflow as tf
 from tensorflow.contrib import data
 from tensorflow.contrib import lookup
+import numpy as np
+import pandas as pd
 
 
 class DataFiles:
@@ -17,7 +19,7 @@ class DataFiles:
     _test_file_names = ["./data/ai_challenger_sentiment_analysis_testa_20180816/sentiment_analysis_testa.csv"]
     _dict_file = "./data/words.dict"
 
-    _record_defaults = [tf.constant([], dtype=tf.int32), tf.constant([], dtype=tf.string), tf.constant([0], dtype=tf.int32),
+    _record_defaults = [tf.constant([0], dtype=tf.int32), tf.constant([], dtype=tf.string), tf.constant([0], dtype=tf.int32),
                         tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32),
                         tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32),
                         tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32),
@@ -67,6 +69,33 @@ def build_vocab():
         print("字典文件构建完毕~~~")
 
 
+class LookMan(object):
+
+    _box = set()
+    _table = {}
+    _num_oov = -1
+
+    def __init__(self, dict_file, num_oov_buckets=1):
+        self._num_oov = num_oov_buckets
+        with open(dict_file, "r") as f:
+            word = f.readline().strip("\n")
+            self._box.add(word)
+
+        k = 0
+        for i in self._box:
+            if k == num_oov_buckets:
+                k = k + 1
+            self._table[i] = k
+            k = k + 1
+
+    def lookup(self, key):
+        try:
+            id = self._table[key]
+        except KeyError as e:
+            id = self._num_oov
+        return id
+
+
 class MoonLight(object):
     _train_file_names = DataFiles._train_file_names
     _validation_file_names = DataFiles._validation_file_names
@@ -75,31 +104,47 @@ class MoonLight(object):
     _batch_size = 32
     _table = None
 
+    _train_iterator = None
     _train_batch = None
+
+    _embedding_dimension = 50
+
+    def __init__(self, embedding_dimension=100):
+        self._embedding_dimension = embedding_dimension
 
     def load(self):
         build_vocab()
-        self._table = lookup.index_table_from_file(DataFiles._dict_file, num_oov_buckets=1)
+        self._table = LookMan(DataFiles._dict_file, num_oov_buckets=1)
+
+    def _gen_train_data(self):
+        filenames = self._train_file_names
+        for file in filenames:
+            lines = pd.read_csv(file, delimiter=",", skiprows=1)
+            for i in range(len(lines)):
+                sentence = lines.iloc[i, 1].strip("\"")
+                ids = [self._table.lookup(i) for i in sentence]
+                yield ids, lines.iloc[i, range(2, 22, 1)]
 
     def _load_train_data(self):
-        train_files = self._train_file_names
-        train_dataset = data.CsvDataset(train_files, record_defaults=DataFiles._record_defaults, header=True)
-        train_dataset = train_dataset.map(lambda x: (x[1], x[1:]))
-        train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=[])
-        train_iterator = train_dataset.make_initializable_iterator()
-        self._train_batch = train_iterator.get_next()
+        train_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64), ([None], [20]))
+        train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None]),
+                                                   padding_values=(tf.constant(-1, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
+        self._train_iterator = train_dataset.make_initializable_iterator()
+        self._train_batch = self._train_iterator.get_next()
+
+    def _create_embedding(self):
+        with tf.name_scope("create——embedding"):
+            self._embedding = tf.Variable()
 
 
 if __name__ == "__main__":
+    tf.Graph()
     ml = MoonLight()
-    ml.load()
-    print(ml._table)
     with tf.Session() as sess:
-        sess.run(tf.tables_initializer())
-        features = tf.constant(["他", "我", "and", "你"])
-        ids = ml._table.lookup(features)
-        print(sess.run(ids))
+        ml.load()
         ml._load_train_data()
+        sess.run(ml._train_iterator.initializer)
+        sess.run(tf.tables_initializer())
         while True:
             try:
                 print(sess.run(ml._train_batch))
