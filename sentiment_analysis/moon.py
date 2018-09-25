@@ -9,8 +9,6 @@ email: diqiuzhuanzhuan@gmail.com
 import tensorflow as tf
 from tensorflow.contrib import *
 from tensorflow.contrib import data
-from tensorflow.contrib import lookup
-import numpy as np
 import pandas as pd
 
 
@@ -119,7 +117,8 @@ class MoonLight(object):
     _lstm_unit = 256
     _lstm_layers = 2
     _keep_prob = None
-    _attention_length = 5
+    _attention_length = 2
+    _learning_rate = 0.01
 
     def __init__(self, embedding_dimension=100):
         self._embedding_dimension = embedding_dimension
@@ -170,7 +169,7 @@ class MoonLight(object):
         train_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [20]))
         train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [20]),
                                                    padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
-        train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
+        train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.float32)))
         self._train_iterator = train_dataset.make_initializable_iterator()
         self._train_feature, self._train_feature_len, self._train_labels = self._train_iterator.get_next()
 
@@ -178,7 +177,7 @@ class MoonLight(object):
         with tf.name_scope("create_embedding"):
             self._embedding_matrix = tf.get_variable(name="embedding_matrix", shape=[self._vocab_size, self._embedding_dimension],
                                               initializer=tf.variance_scaling_initializer)
-            self._embedding = tf.nn.embedding_lookup(self._embedding_matrix, self._train_batch[0], name="embedding")
+            self._embedding = tf.nn.embedding_lookup(self._embedding_matrix, self._train_feature, name="embedding")
 
     def _create_bilstm(self):
 
@@ -189,33 +188,52 @@ class MoonLight(object):
             return cell
 
         with tf.name_scope("create_bilstm"):
-            # lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self._lstm_unit, activation=tf.nn.relu)
-            stack_fw_lstm = tf.nn.rnn_cell.MultiRNNCell(
-                [lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)]
-            )
-            initial_state_fw = stack_fw_lstm.zero_state(self._batch_size, tf.float32)
-            stack_bw_lstm = tf.nn.rnn_cell.MultiRNNCell(
-                [lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)]
-            )
-            initial_state_bw = stack_bw_lstm.zero_state(self._batch_size, tf.float32)
-            self._sentence_encoder_output, self._sentence_encoder_state = \
-                rnn.stack_bidirectional_dynamic_rnn(cells_fw=stack_fw_lstm, cells_bw=stack_bw_lstm, initial_states_fw=initial_state_fw,
+            #stack_fw_lstm = tf.nn.rnn_cell.MultiRNNCell(
+            stack_fw_lstm = [lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)]
+            initial_state_fw = [stack_fw_lstm_unit.zero_state(self._batch_size, tf.float32) for stack_fw_lstm_unit in stack_fw_lstm]
+            stack_bw_lstm = [lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)]
+            initial_state_bw = [stack_bw_lstm_unit.zero_state(self._batch_size, tf.float32) for stack_bw_lstm_unit in stack_bw_lstm]
+            self._sentence_encoder_output, self._fw_state, self._bw_state = \
+                rnn.stack_bidirectional_dynamic_rnn(cells_fw=stack_fw_lstm, cells_bw=stack_bw_lstm, initial_states_fw=initial_state_fw,\
                                                     initial_states_bw=initial_state_bw, inputs=self._embedding)
 
     def _create_loss(self):
         with tf.name_scope("create_loss"):
-            pass
             #self._loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=self._sentence_encoder_state, labels=)
+#            length = tf.shape(self._train_labels)[1]
+            length = self._train_labels.get_shape()[1].value
+            output_dimension = self._train_labels.get_shape()[2].value
+            input = tf.concat([self._bw_state[-1][-1], self._fw_state[-1][-1]], 1)
+            logits = tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=29))
+            self._loss = [tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=self._train_labels[:, i, :]) for i in range(length)]
+            self._total_loss = tf.reduce_sum(self._loss, axis=0)
+            self._total_loss = tf.reduce_mean(self._total_loss, axis=0)
+
+    def _create_optimizer(self):
+        with tf.name_scope("create_optimizer"):
+           self._optimizer = tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._total_loss)
+
+    def _create_summary(self):
+        with tf.name_scope("summary"):
+            tf.summary.scalar('loss', self._total_loss)
+            tf.summary.histogram('histogram loss', self._total_loss)
+            self._summary_op = tf.summary.merge_all()
+
+    def build(self, sess):
+        self.load()
+        self._load_train_data()
+        self._create_embedding()
+        self._create_bilstm()
+        self._create_loss()
+        self._create_optimizer()
+        sess.run(ml._train_iterator.initializer)
 
 
 if __name__ == "__main__":
     tf.Graph()
     ml = MoonLight()
     with tf.Session() as sess:
-        ml.load()
-        ml._load_train_data()
-        sess.run(ml._train_iterator.initializer)
-        sess.run(tf.tables_initializer())
+        ml.build(sess)
         while True:
             try:
                 print(sess.run([ml._train_feature, ml._train_feature_len, ml._train_labels]))
