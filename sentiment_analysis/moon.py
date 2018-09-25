@@ -209,24 +209,24 @@ class MoonLight(object):
 
         def lstm_cell(lstm_unit):
             cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=lstm_unit, activation=tf.nn.relu)
-            cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length)
+#            cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length)
             cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, input_keep_prob=self._keep_prob)
             return cell
 
         with tf.name_scope("create_bilstm"):
-            stack_fw_lstm = [lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)]
-            initial_state_fw = [stack_fw_lstm_unit.zero_state(self._batch_size, tf.float32) for stack_fw_lstm_unit in stack_fw_lstm]
-            stack_bw_lstm = [lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)]
-            initial_state_bw = [stack_bw_lstm_unit.zero_state(self._batch_size, tf.float32) for stack_bw_lstm_unit in stack_bw_lstm]
+            stack_fw_lstm = tf.nn.rnn_cell.MultiRNNCell([lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)])
+            initial_state_fw = stack_fw_lstm.zero_state(self._batch_size, tf.float32)
+            stack_bw_lstm = tf.nn.rnn_cell.MultiRNNCell([lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)])
+            initial_state_bw = stack_bw_lstm.zero_state(self._batch_size, tf.float32)
             self._sentence_encoder_output, self._fw_state, self._bw_state = \
-                rnn.stack_bidirectional_dynamic_rnn(cells_fw=stack_fw_lstm, cells_bw=stack_bw_lstm, initial_states_fw=initial_state_fw,\
-                                                    initial_states_bw=initial_state_bw, inputs=self._embedding)
+                rnn.stack_bidirectional_dynamic_rnn(cells_fw=[stack_fw_lstm], cells_bw=[stack_bw_lstm], initial_states_fw=[initial_state_fw],\
+                                                    initial_states_bw=[initial_state_bw], inputs=self._embedding)
 
     def _create_loss(self):
         with tf.name_scope("create_loss"):
             length = self._train_labels.get_shape()[1].value
             output_dimension = self._train_labels.get_shape()[2].value
-            input = tf.concat([self._bw_state[-1][-1], self._fw_state[-1][-1]], 1)
+            input = tf.concat([self._bw_state[-1][-1][-1], self._fw_state[-1][-1][-1]], 1)
             logits = tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=29))
             self._loss = [tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=self._train_labels[:, i, :]) for i in range(length)]
             self._total_loss = tf.reduce_sum(self._loss, axis=0)
@@ -259,9 +259,9 @@ if __name__ == "__main__":
     ml = MoonLight()
     with tf.Session() as sess:
         ml.build(sess)
+        sess.run(tf.global_variables_initializer())
         while True:
             try:
-                sess.run(tf.global_variables_initializer())
                 _, loss = sess.run([ml._optimizer, ml._total_loss], feed_dict={ml._keep_prob: 0.6})
                 print("loss is {}".format(loss))
             except tf.errors.OutOfRangeError:
