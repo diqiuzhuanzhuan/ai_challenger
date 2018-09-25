@@ -188,7 +188,6 @@ class MoonLight(object):
             return cell
 
         with tf.name_scope("create_bilstm"):
-            #stack_fw_lstm = tf.nn.rnn_cell.MultiRNNCell(
             stack_fw_lstm = [lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)]
             initial_state_fw = [stack_fw_lstm_unit.zero_state(self._batch_size, tf.float32) for stack_fw_lstm_unit in stack_fw_lstm]
             stack_bw_lstm = [lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)]
@@ -205,6 +204,7 @@ class MoonLight(object):
             logits = tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=29))
             self._loss = [tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=self._train_labels[:, i, :]) for i in range(length)]
             self._total_loss = tf.reduce_sum(self._loss, axis=0)
+            self._total_loss = tf.reduce_sum(self._total_loss, 1)
             self._total_loss = tf.reduce_mean(self._total_loss, axis=0)
 
     def _create_optimizer(self):
@@ -235,6 +235,8 @@ if __name__ == "__main__":
         ml.build(sess)
         while True:
             try:
-                print(sess.run([ml._train_feature, ml._train_feature_len, ml._train_labels]))
+                sess.run(tf.global_variables_initializer())
+                _, loss = sess.run([ml._optimizer, ml._total_loss], feed_dict={ml._keep_prob: 0.6})
+                print("loss is {}".format(loss))
             except tf.errors.OutOfRangeError:
                 break
