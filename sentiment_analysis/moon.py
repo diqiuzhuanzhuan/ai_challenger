@@ -199,8 +199,6 @@ class MoonLight(object):
 
     def _create_loss(self):
         with tf.name_scope("create_loss"):
-            #self._loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=self._sentence_encoder_state, labels=)
-#            length = tf.shape(self._train_labels)[1]
             length = self._train_labels.get_shape()[1].value
             output_dimension = self._train_labels.get_shape()[2].value
             input = tf.concat([self._bw_state[-1][-1], self._fw_state[-1][-1]], 1)
@@ -226,6 +224,7 @@ class MoonLight(object):
         self._create_bilstm()
         self._create_loss()
         self._create_optimizer()
+        self._create_summary()
         sess.run(ml._train_iterator.initializer)
 
 
