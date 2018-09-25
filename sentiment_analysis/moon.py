@@ -10,12 +10,17 @@ import tensorflow as tf
 from tensorflow.contrib import *
 from tensorflow.contrib import data
 import pandas as pd
+import os
+import urllib
 
 
 class DataFiles:
     _train_file_names = ["./data/ai_challenger_sentiment_analysis_trainingset_20180816/sentiment_analysis_trainingset.csv"]
+    _train_file_url = ["http://www.diqiuzhuanzhuan.com/download/344/"]
     _validation_file_names = ["./data/ai_challenger_sentiment_analysis_validationset_20180816/sentiment_analysis_validationset.csv"]
+    _validation_file_url = ["http://www.diqiuzhuanzhuan.com/download/346/"]
     _test_file_names = ["./data/ai_challenger_sentiment_analysis_testa_20180816/sentiment_analysis_testa.csv"]
+    _test_file_url = ["http://www.diqiuzhuanzhuan.com/download/334/"]
     _dict_file = "./data/words.dict"
 
     _record_defaults = [tf.constant([0], dtype=tf.int32), tf.constant([], dtype=tf.string), tf.constant([0], dtype=tf.int32),
@@ -27,13 +32,34 @@ class DataFiles:
                         tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32),
                         tf.constant([0], dtype=tf.int32)]
 
+    @classmethod
+    def _prepare_data(cls):
+        for url, file in zip(cls._train_file_url, cls._train_file_names):
+            cls._download(url, file)
+        for url, file in zip(cls._validation_file_url, cls._validation_file_names):
+            cls._download(url, file)
+        for url, file in zip(cls._test_file_url, cls._test_file_names):
+            cls._download(url, file)
+
+    @classmethod
+    def _download(cls, url, file_name):
+        if not os.path.exists(file_name):
+            try:
+                print("正在下载文件{}".format(file_name))
+                dest, _ = urllib.request.urlretrieve(url=url, filename=file_name)
+                print("{}下载完成".format(file_name))
+            except Exception as e:
+                os.remove(file_name)
+
 
 def build_vocab():
     import os
+    print("正在准备数据集")
+    DataFiles._prepare_data()
+    print("数据集已准备完毕")
     if os.path.exists(DataFiles._dict_file):
         print("字典文件已经存在，不必再生成, 如果你想重新生成，请先手动删除该文件：{}".format(DataFiles._dict_file))
         return
-
     print("字典文件还没有构建，正在为您构建字典文件，请稍等......")
     files = DataFiles._train_file_names + DataFiles._validation_file_names + DataFiles._test_file_names
     dataset = data.CsvDataset(files, DataFiles._record_defaults, header=True)
