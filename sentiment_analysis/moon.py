@@ -241,17 +241,21 @@ class MoonLight(object):
             print(self._sentence_encoder_output.get_shape())
             input = self._sentence_encoder_output[:, -1, :]
             logits = [
-                tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.sigmoid)
+                tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.relu)
                 for i in range(length)
             ]
             self._predict = tf.stack([tf.nn.softmax(logits=logits[i]) for i in range(length)])
             self._predict = tf.argmax(self._predict, axis=2)
             self._predict = tf.one_hot(self._predict, depth=output_dimension)
             self._predict = tf.transpose(self._predict, [1, 0, 2])
-            self._loss = [tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits[i], labels=self._train_labels[:, i, :]) for i in range(length)]
-            self._total_loss = tf.reduce_sum(self._loss, axis=0)
+            self._loss = tf.stack([tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits[i], labels=self._train_labels[:, i, :]) for i in range(length)])
+            self._loss = tf.transpose(self._loss, [1, 0])
+            print("loss shape is {}".format(self._loss.get_shape()))
+            self._total_loss = tf.reduce_sum(self._loss, axis=1)
+            print("total loss shape is {}".format(self._total_loss.get_shape()))
             self._total_loss = tf.reduce_mean(self._total_loss, axis=0)
-            self._f1_score = metrics.f1_score(tf.reshape(self._predict, shape=[-1, 1]), tf.reshape(self._train_labels, shape=[-1, 1]), num_thresholds=1)
+            print("total loss shape is {}".format(self._total_loss.get_shape()))
+            self._f1_score = metrics.f1_score(tf.reshape(self._predict, shape=[-1]), tf.reshape(self._train_labels, shape=[-1]), num_thresholds=1)
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
@@ -272,8 +276,6 @@ class MoonLight(object):
         self._create_loss()
         self._create_optimizer()
         self._create_summary()
-        sess.run(self._train_iterator.initializer)
-        sess.run(self._validation_iterator.initializer)
 
     def train(self, epoches=10):
         if not os.path.exists("checkpoint"):
@@ -290,15 +292,15 @@ class MoonLight(object):
             initial_step = self.global_step.eval()
             print("initial_step is {}".format(initial_step))
             for i in range(initial_step, initial_step+epoches):
-                sess.run(self._train_iterator.initializer)
                 while True:
                     try:
+                        sess.run(self._train_iterator.initializer)
                         _, loss, summary, f1_score = sess.run([self._optimizer, self._total_loss, self._summary_op, self._f1_score], feed_dict={self._keep_prob: 0.6})
                         writer.add_summary(summary, global_step=i)
-#                        p = sess.run(self._predict,  feed_dict={self._keep_prob: 1.0})
+                        p = sess.run(self._predict,  feed_dict={self._keep_prob: 1.0})
 #                        l = sess.run(self._train_labels, feed_dict={self._keep_prob: 1.0})
 #                        [print("predict is {}, label is {}".format(i, j)) for i, j in zip(p, l)]
-                       # print("prediction is {}".format(p))
+#                        print("prediction is {}".format(p))
                         print("loss is {}".format(loss))
                         print("f1_score is {}".format(f1_score))
 
