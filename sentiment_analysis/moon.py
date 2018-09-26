@@ -263,6 +263,7 @@ if __name__ == "__main__":
         while True:
             try:
                 _, loss = sess.run([ml._optimizer, ml._total_loss], feed_dict={ml._keep_prob: 0.6})
+#                print(sess.run(ml._bw_state[-1][-1][-1], feed_dict={ml._keep_prob: 1.0}))
                 print("loss is {}".format(loss))
             except tf.errors.OutOfRangeError:
                 break
