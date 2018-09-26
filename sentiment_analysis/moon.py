@@ -209,7 +209,7 @@ class MoonLight(object):
 
         def lstm_cell(lstm_unit):
             cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=lstm_unit)
-            cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
+           # cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
             cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, input_keep_prob=self._keep_prob)
             return cell
 
