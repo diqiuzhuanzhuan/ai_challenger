@@ -13,6 +13,8 @@ import pandas as pd
 import os
 import urllib
 
+os.environ['CUDA_VISIBLE_DEVICES']='0, 1, 2'
+
 
 class DataFiles:
     _train_file_names = ["./data/ai_challenger_sentiment_analysis_trainingset_20180816/sentiment_analysis_trainingset.csv"]
@@ -131,7 +133,7 @@ class MoonLight(object):
     _validation_file_names = DataFiles._validation_file_names
     _test_file_names = DataFiles._validation_file_names
 
-    _batch_size = 32
+    _batch_size = 64
     _table = None
     _vocab_size = 0
 
@@ -140,10 +142,11 @@ class MoonLight(object):
 
     _embedding_dimension = 50
     _lstm_unit = 256
-    _lstm_layers = 2
+    _lstm_layers = 1
     _keep_prob = None
     _attention_length = 40
     _learning_rate = 0.1
+    _labels_num = 20
 
     def __init__(self, embedding_dimension=100):
         self._embedding_dimension = embedding_dimension
@@ -163,7 +166,7 @@ class MoonLight(object):
                 sentence = lines.iloc[i, 1].strip("\"")
                 ids = [self._table.lookup(i) for i in sentence]
                 labels = []
-                for j in range(2, 22, 1):
+                for j in range(2, 2+self._labels_num, 1):
                     code = lines.iloc[i, j]
                     # 标注数据可能取值为-2, -1, 0, 1, 为了onehot编码，归一化为0， 1， 2， 3
                     code = code + 2
@@ -192,16 +195,16 @@ class MoonLight(object):
         yield from self._get_no_label_data(file_names)
 
     def _load_train_data(self):
-        train_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [20]))
-        train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [20]),
+        train_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
+        train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [self._labels_num]),
                                                    padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.float32)))
         self._train_iterator = train_dataset.make_initializable_iterator()
         self._train_feature, self._train_feature_len, self._train_labels = self._train_iterator.get_next()
 
     def _load_validation_data(self):
-        validation_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [20]))
-        validation_dataset = validation_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [20]),
+        validation_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
+        validation_dataset = validation_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [self._labels_num]),
                                                    padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         validation_dataset = validation_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.float32)))
         self._validation_iterator = validation_dataset.make_initializable_iterator()
@@ -234,7 +237,9 @@ class MoonLight(object):
         with tf.name_scope("create_loss"):
             length = self._train_labels.get_shape()[1].value
             output_dimension = self._train_labels.get_shape()[2].value
-            input = tf.concat([self._bw_state[-1][-1][-1], self._fw_state[-1][-1][-1]], 1)
+#            input = tf.concat([self._bw_state[0][-1], self._fw_state[0][-1]], 1)
+            print(self._sentence_encoder_output.get_shape())
+            input = self._sentence_encoder_output[:, -1, :]
             logits = [
                 tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.sigmoid)
                 for i in range(length)
@@ -290,10 +295,10 @@ class MoonLight(object):
                     try:
                         _, loss, summary, f1_score = sess.run([self._optimizer, self._total_loss, self._summary_op, self._f1_score], feed_dict={self._keep_prob: 0.6})
                         writer.add_summary(summary, global_step=i)
-                        p = sess.run(self._predict,  feed_dict={self._keep_prob: 1.0})
-                        #l = sess.run(self._train_labels, feed_dict={self._keep_prob: 1.0})
-                        #[print("predict is {}, label is {}".format(i, j)) for i, j in zip(p, l)]
-                        #print("prediction is {}".format(p))
+#                        p = sess.run(self._predict,  feed_dict={self._keep_prob: 1.0})
+#                        l = sess.run(self._train_labels, feed_dict={self._keep_prob: 1.0})
+#                        [print("predict is {}, label is {}".format(i, j)) for i, j in zip(p, l)]
+                       # print("prediction is {}".format(p))
                         print("loss is {}".format(loss))
                         print("f1_score is {}".format(f1_score))
 
