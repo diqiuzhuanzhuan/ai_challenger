@@ -143,7 +143,7 @@ class MoonLight(object):
     _lstm_unit = 256
     _lstm_layers = 2
     _keep_prob = None
-    _attention_length = 2
+    _attention_length = 40
     _learning_rate = 0.01
 
     def __init__(self, embedding_dimension=100):
@@ -208,8 +208,8 @@ class MoonLight(object):
     def _create_bilstm(self):
 
         def lstm_cell(lstm_unit):
-            cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=lstm_unit, activation=tf.nn.relu)
-#            cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length)
+            cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=lstm_unit)
+            cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
             cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, input_keep_prob=self._keep_prob)
             return cell
 
@@ -228,9 +228,9 @@ class MoonLight(object):
             output_dimension = self._train_labels.get_shape()[2].value
             input = tf.concat([self._bw_state[-1][-1][-1], self._fw_state[-1][-1][-1]], 1)
             logits = tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=29))
-            self._loss = [tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=self._train_labels[:, i, :]) for i in range(length)]
+            self._predict = tf.nn.softmax(logits=logits)
+            self._loss = [tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self._train_labels[:, i, :]) for i in range(length)]
             self._total_loss = tf.reduce_sum(self._loss, axis=0)
-            self._total_loss = tf.reduce_sum(self._total_loss, 1)
             self._total_loss = tf.reduce_mean(self._total_loss, axis=0)
 
     def _create_optimizer(self):
@@ -263,7 +263,7 @@ if __name__ == "__main__":
         while True:
             try:
                 _, loss = sess.run([ml._optimizer, ml._total_loss], feed_dict={ml._keep_prob: 0.6})
-#                print(sess.run(ml._bw_state[-1][-1][-1], feed_dict={ml._keep_prob: 1.0}))
+                print(sess.run(ml._bw_state[-1][-1][-1], feed_dict={ml._keep_prob: 1.0}))
                 print("loss is {}".format(loss))
             except tf.errors.OutOfRangeError:
                 break
