@@ -126,7 +126,6 @@ class LookMan(object):
         return self._table.__len__() + 1
 
 
-
 class MoonLight(object):
     _train_file_names = DataFiles._train_file_names
     _validation_file_names = DataFiles._validation_file_names
@@ -144,11 +143,12 @@ class MoonLight(object):
     _lstm_layers = 2
     _keep_prob = None
     _attention_length = 40
-    _learning_rate = 0.01
+    _learning_rate = 0.1
 
     def __init__(self, embedding_dimension=100):
         self._embedding_dimension = embedding_dimension
         self._keep_prob = tf.placeholder(dtype=tf.float32, name="keep_prob")
+        self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)
 
     def load(self):
         build_vocab()
@@ -164,7 +164,7 @@ class MoonLight(object):
                 ids = [self._table.lookup(i) for i in sentence]
                 labels = []
                 for j in range(2, 22, 1):
-                    code = lines.iloc[1, j]
+                    code = lines.iloc[i, j]
                     # 标注数据可能取值为-2, -1, 0, 1, 为了onehot编码，归一化为0， 1， 2， 3
                     code = code + 2
                     labels.append(code)
@@ -199,6 +199,14 @@ class MoonLight(object):
         self._train_iterator = train_dataset.make_initializable_iterator()
         self._train_feature, self._train_feature_len, self._train_labels = self._train_iterator.get_next()
 
+    def _load_validation_data(self):
+        validation_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [20]))
+        validation_dataset = validation_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [20]),
+                                                   padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
+        validation_dataset = validation_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.float32)))
+        self._validation_iterator = validation_dataset.make_initializable_iterator()
+        self._validation_feature, self._validation_feature_len, self._validation_labels = self._validation_iterator.get_next()
+
     def _create_embedding(self):
         with tf.name_scope("create_embedding"):
             self._embedding_matrix = tf.get_variable(name="embedding_matrix", shape=[self._vocab_size, self._embedding_dimension],
@@ -227,11 +235,18 @@ class MoonLight(object):
             length = self._train_labels.get_shape()[1].value
             output_dimension = self._train_labels.get_shape()[2].value
             input = tf.concat([self._bw_state[-1][-1][-1], self._fw_state[-1][-1][-1]], 1)
-            logits = tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=29))
-            self._predict = tf.nn.softmax(logits=logits)
-            self._loss = [tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self._train_labels[:, i, :]) for i in range(length)]
+            logits = [
+                tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.sigmoid)
+                for i in range(length)
+            ]
+            self._predict = tf.stack([tf.nn.softmax(logits=logits[i]) for i in range(length)])
+            self._predict = tf.argmax(self._predict, axis=2)
+            self._predict = tf.one_hot(self._predict, depth=output_dimension)
+            self._predict = tf.transpose(self._predict, [1, 0, 2])
+            self._loss = [tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits[i], labels=self._train_labels[:, i, :]) for i in range(length)]
             self._total_loss = tf.reduce_sum(self._loss, axis=0)
             self._total_loss = tf.reduce_mean(self._total_loss, axis=0)
+            self._f1_score = metrics.f1_score(tf.reshape(self._predict, shape=[-1, 1]), tf.reshape(self._train_labels, shape=[-1, 1]), num_thresholds=1)
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
@@ -246,24 +261,47 @@ class MoonLight(object):
     def build(self, sess):
         self.load()
         self._load_train_data()
+        self._load_validation_data()
         self._create_embedding()
         self._create_bilstm()
         self._create_loss()
         self._create_optimizer()
         self._create_summary()
-        sess.run(ml._train_iterator.initializer)
+        sess.run(self._train_iterator.initializer)
+        sess.run(self._validation_iterator.initializer)
+
+    def train(self, epoches=10):
+        if not os.path.exists("checkpoint"):
+            os.mkdir("checkpoint")
+        saver = tf.train.Saver()
+        with tf.Session() as sess:
+            self.build(sess)
+            sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
+            ckpt = tf.train.get_checkpoint_state(os.path.dirname('checkpoint/checkpoint'))
+            if ckpt and ckpt.model_checkpoint_path:
+                saver.restore(sess, ckpt.model_checkpoint_path)
+
+            writer = tf.summary.FileWriter('graphs/ai_challenger/learning_rate' + str(self._learning_rate), sess.graph)
+            initial_step = self.global_step.eval()
+            print("initial_step is {}".format(initial_step))
+            for i in range(initial_step, initial_step+epoches):
+                sess.run(self._train_iterator.initializer)
+                while True:
+                    try:
+                        _, loss, summary, f1_score = sess.run([self._optimizer, self._total_loss, self._summary_op, self._f1_score], feed_dict={self._keep_prob: 0.6})
+                        writer.add_summary(summary, global_step=i)
+                        p = sess.run(self._predict,  feed_dict={self._keep_prob: 1.0})
+                        #l = sess.run(self._train_labels, feed_dict={self._keep_prob: 1.0})
+                        #[print("predict is {}, label is {}".format(i, j)) for i, j in zip(p, l)]
+                        #print("prediction is {}".format(p))
+                        print("loss is {}".format(loss))
+                        print("f1_score is {}".format(f1_score))
+
+                    except tf.errors.OutOfRangeError:
+                        break
 
 
 if __name__ == "__main__":
     tf.Graph()
     ml = MoonLight()
-    with tf.Session() as sess:
-        ml.build(sess)
-        sess.run(tf.global_variables_initializer())
-        while True:
-            try:
-                _, loss = sess.run([ml._optimizer, ml._total_loss], feed_dict={ml._keep_prob: 0.6})
-                print(sess.run(ml._bw_state[-1][-1][-1], feed_dict={ml._keep_prob: 1.0}))
-                print("loss is {}".format(loss))
-            except tf.errors.OutOfRangeError:
-                break
+    ml.train(10)
