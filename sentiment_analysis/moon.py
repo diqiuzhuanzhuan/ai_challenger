@@ -145,7 +145,8 @@ class MoonLight(object):
     _lstm_layers = 1
     _keep_prob = None
     _attention_length = 40
-    _learning_rate = 0.1
+    _learning_rate = 0.01
+    #训练数据中标签总共有20个
     _labels_num = 20
 
     def __init__(self, embedding_dimension=100):
@@ -196,9 +197,9 @@ class MoonLight(object):
 
     def _load_train_data(self):
         train_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
-        train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [self._labels_num]),
+        train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [None]),
                                                    padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
-        train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.float32)))
+        train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
         self._train_iterator = train_dataset.make_initializable_iterator()
         self._train_feature, self._train_feature_len, self._train_labels = self._train_iterator.get_next()
 
@@ -233,11 +234,12 @@ class MoonLight(object):
                 rnn.stack_bidirectional_dynamic_rnn(cells_fw=[stack_fw_lstm], cells_bw=[stack_bw_lstm], initial_states_fw=[initial_state_fw],\
                                                     initial_states_bw=[initial_state_bw], inputs=self._embedding)
 
+
+
     def _create_loss(self):
         with tf.name_scope("create_loss"):
-            length = self._train_labels.get_shape()[1].value
+            length = self._labels_num
             output_dimension = self._train_labels.get_shape()[2].value
-#            input = tf.concat([self._bw_state[0][-1], self._fw_state[0][-1]], 1)
             print(self._sentence_encoder_output.get_shape())
             input = self._sentence_encoder_output[:, -1, :]
             logits = [
@@ -246,20 +248,20 @@ class MoonLight(object):
             ]
             self._predict = tf.stack([tf.nn.softmax(logits=logits[i]) for i in range(length)])
             self._predict = tf.argmax(self._predict, axis=2)
-            self._predict = tf.one_hot(self._predict, depth=output_dimension)
+            self._predict = tf.one_hot(self._predict, depth=output_dimension, dtype=tf.int64)
             self._predict = tf.transpose(self._predict, [1, 0, 2])
             self._loss = tf.stack([tf.losses.softmax_cross_entropy(onehot_labels=self._train_labels[:, i, :], logits=logits[i]) for i in range(length)])
-#            self._loss = tf.transpose(self._loss, [1, 0])
             print("loss shape is {}".format(self._loss.get_shape()))
-#            self._total_loss = tf.reduce_sum(self._loss, axis=1)
-#            print("total loss shape is {}".format(self._total_loss.get_shape()))
             self._total_loss = tf.reduce_mean(self._loss, axis=0)
             print("total loss shape is {}".format(self._total_loss.get_shape()))
-            self._f1_score = metrics.f1_score(tf.reshape(self._predict, shape=[-1]), tf.reshape(self._train_labels, shape=[-1]), num_thresholds=1)
+            self._f1_score = metrics.f1_score(tf.reshape(self._predict, shape=[-1]), tf.reshape(self._train_labels, shape=[-1]), num_thresholds=0, name="f1")
+            self._accuracy = tf.metrics.accuracy(tf.reshape(self._train_labels, shape=[-1]), tf.reshape(self._predict, shape=[-1]))
+            self._recall = tf.metrics.recall(tf.reshape(self._train_labels, shape=[-1]), tf.reshape(self._predict, shape=[-1]))
+            self._f1_score = 2 * self._accuracy[0] * self._recall[0]/(self._accuracy[0] + self._recall[0])
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
-           self._optimizer = tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._total_loss)
+           self._optimizer = tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._total_loss, global_step=self.global_step)
 
     def _create_summary(self):
         with tf.name_scope("summary"):
@@ -291,18 +293,23 @@ class MoonLight(object):
             writer = tf.summary.FileWriter('graphs/ai_challenger/learning_rate' + str(self._learning_rate), sess.graph)
             initial_step = self.global_step.eval()
             print("initial_step is {}".format(initial_step))
+            total_loss = 0.0
+            iteration = 0
             for i in range(initial_step, initial_step+epoches):
+                sess.run(self._train_iterator.initializer)
                 while True:
                     try:
-                        sess.run(self._train_iterator.initializer)
-                        _, loss, summary, f1_score = sess.run([self._optimizer, self._total_loss, self._summary_op, self._f1_score], feed_dict={self._keep_prob: 0.6})
+                        _, loss, summary, f1_score, accuracy, recall = \
+                            sess.run([self._optimizer, self._total_loss, self._summary_op, self._f1_score, self._accuracy, self._recall], feed_dict={self._keep_prob: 0.6})
+                        total_loss += loss
+                        iteration = iteration + 1
+                        average_loss = total_loss/iteration
+                        print("average_loss is {}".format(average_loss))
                         writer.add_summary(summary, global_step=i)
-                        p = sess.run(self._predict,  feed_dict={self._keep_prob: 1.0})
-#                        l = sess.run(self._train_labels, feed_dict={self._keep_prob: 1.0})
-#                        [print("predict is {}, label is {}".format(i, j)) for i, j in zip(p, l)]
-#                        print("prediction is {}".format(p))
-                        print("loss is {}".format(loss))
+
                         print("f1_score is {}".format(f1_score))
+                        print("accuracy {}".format(accuracy[0]))
+                        print("recall {}".format(recall[0]))
 
                     except tf.errors.OutOfRangeError:
                         break
