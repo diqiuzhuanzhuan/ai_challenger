@@ -351,10 +351,13 @@ class MoonLight(object):
                 sess.run(self._train_iterator, feed_dict={self._batch_size: batch_size})
                 while True:
                     try:
-                        _, loss, summary, f1_score, accuracy, recall = sess.run(
-                            [self._optimizer, self._total_loss, self._summary_op, self._train_f1_score, self._train_accuracy, self._train_recall],
+                        _, loss, summary, f1_score, accuracy, recall, predict = sess.run(
+                            [self._optimizer, self._total_loss, self._summary_op, self._train_f1_score, self._train_accuracy, self._train_recall, self._predict],
                             feed_dict={self._keep_prob: 0.6, self._batch_size: batch_size}
                         )
+                        res = sess.run(tf.argmax(predict, axis=2) - 2)
+                        for line in res:
+                            print(line)
                         total_loss += loss
                         iteration = iteration + 1
                         average_loss = total_loss/iteration
@@ -365,16 +368,35 @@ class MoonLight(object):
                     except tf.errors.OutOfRangeError:
                         break
                 saver.save(sess, save_path="checkpoint/moon")
-                sess.run(self._validation_iterator, feed_dict={self._batch_size: 32})
+                sess.run(self._validation_iterator, feed_dict={self._batch_size: batch_size})
                 while True:
                     try:
-                        f1_score, accuracy, recall = sess.run(
-                            [self._validation_f1_score, self._validation_accuracy, self._validation_recall],
-                            feed_dict={self._keep_prob: 1.0, self._batch_size: 32})
+                        f1_score, accuracy, recall, predict = sess.run(
+                            [self._validation_f1_score, self._validation_accuracy, self._validation_recall, self._predict],
+                            feed_dict={self._keep_prob: 1.0, self._batch_size: batch_size})
                         print("validation f1_score is {}, accurancy is {}, recall is {}".format(f1_score, accuracy[0], recall[0]))
+                        res = sess.run(tf.argmax(predict, axis=2) - 2)
+                        for line in res:
+                            print(line)
 
                     except tf.errors.OutOfRangeError:
                         break
+
+                sess.run(self._test_iterator, feed_dict={self._batch_size: 1})
+                while True:
+                    try:
+                        predict = sess.run(
+                            self._predict, feed_dict={self._keep_prob: 1.0, self._batch_size: 1}
+                         )
+                        res = sess.run(tf.argmax(predict, axis=2) - 2)
+                        for line in res:
+                            print(line)
+                            OutputContent.add_label(line)
+
+                    except tf.errors.OutOfRangeError:
+                        break
+                OutputContent.persist()
+
 
     def test(self):
         saver = tf.train.Saver()
@@ -406,6 +428,3 @@ class MoonLight(object):
 if __name__ == "__main__":
     ml = MoonLight()
     ml.train(1)
-    del ml
-    ml2 = MoonLight()
-    ml2.test()
