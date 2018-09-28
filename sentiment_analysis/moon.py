@@ -151,8 +151,10 @@ class MoonLight(object):
 
     def __init__(self, embedding_dimension=100):
         self._embedding_dimension = embedding_dimension
+        self._sequence_input = tf.placeholder(shape=[self._batch_size, None], dtype=tf.int64)
         self._keep_prob = tf.placeholder(dtype=tf.float32, name="keep_prob")
         self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)
+        self._run_type = tf.placeholder(dtype=tf.string, name="run_type")
 
     def load(self):
         build_vocab()
@@ -191,31 +193,44 @@ class MoonLight(object):
         file_names = self._train_file_names
         yield from self._get_has_label_data(file_names)
 
-    def _get_test_data(self):
+    def _gen_test_data(self):
         file_names = self._test_file_names
         yield from self._get_no_label_data(file_names)
 
     def _load_train_data(self):
         train_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
         train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [None]),
-                                                   padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
+                                                   padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)), drop_remainder=True)
         train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
-        self._train_iterator = train_dataset.make_initializable_iterator()
-        self._train_feature, self._train_feature_len, self._train_labels = self._train_iterator.get_next()
+        self._iterator = tf.data.Iterator.from_structure(train_dataset.output_types, train_dataset.output_shapes)
+        self._next_element = self._iterator.get_next()
+#        self._train_iterator = train_dataset.make_initializable_iterator()
+        self._train_iterator = self._iterator.make_initializer(train_dataset)
+#        self._train_feature, self._train_feature_len, self._train_labels = self._train_iterator.get_next()
 
     def _load_validation_data(self):
         validation_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
         validation_dataset = validation_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [self._labels_num]),
-                                                   padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
-        validation_dataset = validation_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.float32)))
-        self._validation_iterator = validation_dataset.make_initializable_iterator()
-        self._validation_feature, self._validation_feature_len, self._validation_labels = self._validation_iterator.get_next()
+                                                   padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)), drop_remainder=True)
+        validation_dataset = validation_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
+#        self._validation_iterator = validation_dataset.make_initializable_iterator()
+        self._validation_iterator = self._iterator.make_initializer(validation_dataset)
+#        self._validation_feature, self._validation_feature_len, self._validation_labels = self._validation_iterator.get_next()
+
+    def _load_test_data(self):
+        test_dataset = tf.data.Dataset.from_generator(self._gen_test_data, (tf.int64, tf.int64), ([None], [None]))
+        test_dataset = test_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None]),
+                                                             padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
+        test_dataset = test_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.float32)))
+        self._test_iterator = test_dataset.make_initializable_iterator()
+        self._test_feature, self._test_feature_len = self._validation_iterator.get_next()
 
     def _create_embedding(self):
         with tf.name_scope("create_embedding"):
             self._embedding_matrix = tf.get_variable(name="embedding_matrix", shape=[self._vocab_size, self._embedding_dimension],
                                               initializer=tf.variance_scaling_initializer)
-            self._embedding = tf.nn.embedding_lookup(self._embedding_matrix, self._train_feature, name="embedding")
+
+            self._embedding = tf.nn.embedding_lookup(self._embedding_matrix, self._next_element[0], name="embedding")
 
     def _create_bilstm(self):
 
@@ -234,30 +249,33 @@ class MoonLight(object):
                 rnn.stack_bidirectional_dynamic_rnn(cells_fw=[stack_fw_lstm], cells_bw=[stack_bw_lstm], initial_states_fw=[initial_state_fw],\
                                                     initial_states_bw=[initial_state_bw], inputs=self._embedding)
 
+    def _create_output(self):
+        with tf.name_scope("create_output"):
+            length = self._labels_num
+            output_dimension = self._next_element[2].get_shape()[2].value
+            input = self._sentence_encoder_output[:, -1, :]
+            self._logits = [
+                tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.relu)
+                for i in range(length)
+            ]
+            self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i]) for i in range(length)])
+            self._predict = tf.argmax(self._predict, axis=2)
+            self._predict = tf.one_hot(self._predict, depth=output_dimension, dtype=tf.int64)
+            self._predict = tf.transpose(self._predict, [1, 0, 2])
 
+    def _create_metrics(self):
+            self._train_accuracy = tf.metrics.accuracy(tf.reshape(self._next_element[2], shape=[-1]), tf.reshape(self._predict, shape=[-1]), name="train_accuracy")
+            self._train_recall = tf.metrics.recall(tf.reshape(self._next_element[2], shape=[-1]), tf.reshape(self._predict, shape=[-1]), name="train_recall")
+            self._train_f1_score = 2 * self._train_accuracy[0] * self._train_recall[0] / (self._train_accuracy[0] + self._train_recall[0])
+            self._validation_accuracy = tf.metrics.accuracy(tf.reshape(self._next_element[2], shape=[-1]), tf.reshape(self._predict, shape=[-1]), name="validation_accuracy")
+            self._validation_recall = tf.metrics.recall(tf.reshape(self._next_element[2], shape=[-1]), tf.reshape(self._predict, shape=[-1]), name="validation_recall")
+            self._validation_f1_score = 2 * self._validation_accuracy[0] * self._validation_recall[0] / (self._validation_accuracy[0] + self._validation_recall[0])
 
     def _create_loss(self):
         with tf.name_scope("create_loss"):
             length = self._labels_num
-            output_dimension = self._train_labels.get_shape()[2].value
-            print(self._sentence_encoder_output.get_shape())
-            input = self._sentence_encoder_output[:, -1, :]
-            logits = [
-                tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.relu)
-                for i in range(length)
-            ]
-            self._predict = tf.stack([tf.nn.softmax(logits=logits[i]) for i in range(length)])
-            self._predict = tf.argmax(self._predict, axis=2)
-            self._predict = tf.one_hot(self._predict, depth=output_dimension, dtype=tf.int64)
-            self._predict = tf.transpose(self._predict, [1, 0, 2])
-            self._loss = tf.stack([tf.losses.softmax_cross_entropy(onehot_labels=self._train_labels[:, i, :], logits=logits[i]) for i in range(length)])
-            print("loss shape is {}".format(self._loss.get_shape()))
+            self._loss = tf.stack([tf.losses.softmax_cross_entropy(onehot_labels=self._next_element[2][:, i, :], logits=self._logits[i]) for i in range(length)])
             self._total_loss = tf.reduce_mean(self._loss, axis=0)
-            print("total loss shape is {}".format(self._total_loss.get_shape()))
-            self._f1_score = metrics.f1_score(tf.reshape(self._predict, shape=[-1]), tf.reshape(self._train_labels, shape=[-1]), num_thresholds=0, name="f1")
-            self._accuracy = tf.metrics.accuracy(tf.reshape(self._train_labels, shape=[-1]), tf.reshape(self._predict, shape=[-1]))
-            self._recall = tf.metrics.recall(tf.reshape(self._train_labels, shape=[-1]), tf.reshape(self._predict, shape=[-1]))
-            self._f1_score = 2 * self._accuracy[0] * self._recall[0]/(self._accuracy[0] + self._recall[0])
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
@@ -269,12 +287,14 @@ class MoonLight(object):
             tf.summary.histogram('histogram loss', self._total_loss)
             self._summary_op = tf.summary.merge_all()
 
-    def build(self, sess):
+    def build(self):
         self.load()
         self._load_train_data()
         self._load_validation_data()
         self._create_embedding()
         self._create_bilstm()
+        self._create_output()
+        self._create_metrics()
         self._create_loss()
         self._create_optimizer()
         self._create_summary()
@@ -284,7 +304,7 @@ class MoonLight(object):
             os.mkdir("checkpoint")
         saver = tf.train.Saver()
         with tf.Session() as sess:
-            self.build(sess)
+            self.build()
             sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
             ckpt = tf.train.get_checkpoint_state(os.path.dirname('checkpoint/checkpoint'))
             if ckpt and ckpt.model_checkpoint_path:
@@ -296,24 +316,30 @@ class MoonLight(object):
             total_loss = 0.0
             iteration = 0
             for i in range(initial_step, initial_step+epoches):
-                sess.run(self._train_iterator.initializer)
+                sess.run(self._train_iterator)
                 while True:
                     try:
-                        _, loss, summary, f1_score, accuracy, recall = \
-                            sess.run([self._optimizer, self._total_loss, self._summary_op, self._f1_score, self._accuracy, self._recall], feed_dict={self._keep_prob: 0.6})
+                        _, loss, summary, f1_score, accuracy, recall = sess.run(
+                            [self._optimizer, self._total_loss, self._summary_op, self._train_f1_score, self._train_accuracy, self._train_recall],
+                            feed_dict={self._keep_prob: 0.6}
+                        )
                         total_loss += loss
                         iteration = iteration + 1
                         average_loss = total_loss/iteration
                         print("average_loss is {}".format(average_loss))
                         writer.add_summary(summary, global_step=i)
-
-                        print("f1_score is {}".format(f1_score))
-                        print("accuracy {}".format(accuracy[0]))
-                        print("recall {}".format(recall[0]))
+                        print("f1_score is {}, accuracy is {}, recall is {}".format(f1_score, accuracy[0], recall[0]))
 
                     except tf.errors.OutOfRangeError:
                         break
+                sess.run(self._validation_iterator)
+                while True:
+                    try:
+                        f1_score, accuracy, recall = sess.run([self._validation_f1_score, self._validation_accuracy, self._validation_recall], feed_dict={self._keep_prob: 1.0})
+                        print("validation f1_score is {}, accurancy is {}, recall is {}".format(f1_score, accuracy[0], recall[0]))
 
+                    except tf.errors.OutOfRangeError:
+                        break
 
 if __name__ == "__main__":
     tf.Graph()
