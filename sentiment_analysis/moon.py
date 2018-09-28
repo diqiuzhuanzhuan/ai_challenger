@@ -145,6 +145,21 @@ class OutputContent(object):
     def add_label(cls, line):
         cls.labels.append(line)
 
+    @classmethod
+    def persist(cls, filename="result.csv"):
+        with open(filename, "w") as f:
+            f.write(cls.header)
+            f.write("\n")
+            id = 0
+            for i, j in zip(cls.feature, cls.labels):
+                f.write(str(id))
+                f.write(",")
+                f.write(i)
+                f.write(",")
+                f.write(",".join(map(lambda x: str(x), j)))
+                f.write("\n")
+                id = id + 1
+
 
 class MoonLight(object):
     _train_file_names = DataFiles._train_file_names
@@ -166,6 +181,7 @@ class MoonLight(object):
     _learning_rate = 0.01
     #训练数据中标签总共有20个
     _labels_num = 20
+    _output_dimension = 4
 
     def __init__(self, embedding_dimension=100):
         self._embedding_dimension = embedding_dimension
@@ -198,12 +214,12 @@ class MoonLight(object):
     def _get_no_label_data(self, file_names):
         for file in file_names:
             lines = pd.read_csv(file, delimiter=",", skiprows=0)
-            OutputContent.header = lines[0]
+            OutputContent.header = ",".join(lines.head(0))
             for i in range(1, len(lines)):
                 OutputContent.add_content(lines.iloc[i, 1])
                 sentence = lines.iloc[i, 1].strip("\"")
                 ids = [self._table.lookup(k) for k in sentence]
-                yield ids, [len(ids)]
+                yield ids, [len(ids)], [0] * self._labels_num
 
     def _get_validation_data(self):
         file_names = self._validation_file_names
@@ -234,11 +250,10 @@ class MoonLight(object):
         self._validation_iterator = self._iterator.make_initializer(validation_dataset)
 
     def _load_test_data(self):
-        test_dataset = tf.data.Dataset.from_generator(self._gen_test_data, (tf.int64, tf.int64), ([None], [None]))
-        test_dataset = test_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None]),
-                                                             padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
+        test_dataset = tf.data.Dataset.from_generator(self._gen_test_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
+        test_dataset = test_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [None]),
+                                                             padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         test_dataset = test_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
-        self._iterator = tf.data.Iterator.from_structure(test_dataset.output_types, test_dataset.output_shapes)
         self._next_element = self._iterator.get_next()
         self._test_iterator = self._iterator.make_initializer(test_dataset)
 
@@ -269,7 +284,7 @@ class MoonLight(object):
     def _create_output(self):
         with tf.name_scope("create_output"):
             length = self._labels_num
-            output_dimension = self._next_element[2].get_shape()[2].value
+            output_dimension = self._output_dimension
             input = self._sentence_encoder_output[:, -1, :]
             self._logits = [
                 tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.relu)
@@ -304,10 +319,11 @@ class MoonLight(object):
             tf.summary.histogram('histogram loss', self._total_loss)
             self._summary_op = tf.summary.merge_all()
 
-    def build_for_train(self):
+    def build(self, is_train=True):
         self.load()
         self._load_train_data()
         self._load_validation_data()
+        self._load_test_data()
         self._create_embedding()
         self._create_bilstm()
         self._create_output()
@@ -316,19 +332,12 @@ class MoonLight(object):
         self._create_optimizer()
         self._create_summary()
 
-    def build_for_test(self):
-        self.load()
-        self._load_test_data()
-        self._create_embedding()
-        self._create_bilstm()
-        self._create_output()
-
     def train(self, epoches=10, batch_size=64):
         if not os.path.exists("checkpoint"):
             os.mkdir("checkpoint")
         saver = tf.train.Saver()
         with tf.Session() as sess:
-            self.build_for_train()
+            self.build()
             sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:
@@ -355,7 +364,7 @@ class MoonLight(object):
 
                     except tf.errors.OutOfRangeError:
                         break
-                saver.save(sess, save_path=self._checkpoint_path)
+                saver.save(sess, save_path="checkpoint/moon")
                 sess.run(self._validation_iterator, feed_dict={self._batch_size: 32})
                 while True:
                     try:
@@ -368,9 +377,10 @@ class MoonLight(object):
                         break
 
     def test(self):
-        self.build_for_test()
         saver = tf.train.Saver()
         with tf.Session() as sess:
+            self.build()
+            sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:
                 saver.restore(sess, ckpt.model_checkpoint_path)
@@ -383,7 +393,6 @@ class MoonLight(object):
                     predict = sess.run(
                         self._predict, feed_dict={self._keep_prob: 1.0, self._batch_size: 1}
                     )
-                    print("predict is {}".format(predict))
                     res = sess.run(tf.argmax(predict, axis=2) - 2)
                     for line in res:
                         print(line)
@@ -391,10 +400,12 @@ class MoonLight(object):
 
                 except tf.errors.OutOfRangeError:
                     break
+            OutputContent.persist()
 
 
 if __name__ == "__main__":
-    tf.Graph()
     ml = MoonLight()
     ml.train(1)
-    ml.test()
+    del ml
+    ml2 = MoonLight()
+    ml2.test()
