@@ -150,6 +150,7 @@ class OutputContent(object):
     def persist(cls, filename="result.csv"):
         for i, line in zip(range(1, len(cls.all)), cls.labels):
             cls.all.iloc[i, 2:] = line
+        cls.all.iloc[1:, 2:] = cls.all.iloc[1:, 2:].astype(int)
         cls.all.to_csv(filename, encoding="utf_8_sig", index=False)
 
 
@@ -181,6 +182,7 @@ class MoonLight(object):
         self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
+        self._actual_batch_size = None
 
     def load(self):
         build_vocab()
@@ -250,6 +252,12 @@ class MoonLight(object):
         test_dataset = test_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
         self._next_element = self._iterator.get_next()
         self._test_iterator = self._iterator.make_initializer(test_dataset)
+        self._actual_batch_size = tf.shape(self._next_element[0])[0]
+
+    def load_data(self):
+        self._load_train_data()
+        self._load_validation_data()
+        self._load_test_data()
 
     def _create_embedding(self):
         with tf.name_scope("create_embedding"):
@@ -269,8 +277,9 @@ class MoonLight(object):
         with tf.name_scope("create_bilstm"):
             stack_fw_lstm = tf.nn.rnn_cell.MultiRNNCell([lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)])
             initial_state_fw = stack_fw_lstm.zero_state(tf.to_int32(self._batch_size), tf.float32)
+            initial_state_fw = stack_fw_lstm.zero_state(tf.to_int32(self._actual_batch_size), tf.float32)
             stack_bw_lstm = tf.nn.rnn_cell.MultiRNNCell([lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)])
-            initial_state_bw = stack_bw_lstm.zero_state(tf.to_int32(self._batch_size), tf.float32)
+            initial_state_bw = stack_bw_lstm.zero_state(tf.to_int32(self._actual_batch_size), tf.float32)
             self._sentence_encoder_output, self._fw_state, self._bw_state = \
                 rnn.stack_bidirectional_dynamic_rnn(cells_fw=[stack_fw_lstm], cells_bw=[stack_bw_lstm], initial_states_fw=[initial_state_fw],\
                                                     initial_states_bw=[initial_state_bw], inputs=self._embedding)
@@ -404,20 +413,17 @@ class MoonLight(object):
             else:
                 print("no model!")
                 exit(0)
-            sess.run(self._test_iterator, feed_dict={self._batch_size: 1})
-            a = 0
+            sess.run(self._test_iterator, feed_dict={self._batch_size: 128})
+            print(sess.run(self._actual_batch_size))
             while True:
                 try:
                     predict = sess.run(
-                        self._predict, feed_dict={self._keep_prob: 1.0, self._batch_size: 1}
+                        self._predict, feed_dict={self._keep_prob: 1.0}
                     )
                     res = sess.run(tf.argmax(predict, axis=2) - 2)
                     for line in res:
                         print(line)
                         OutputContent.add_label(line)
-                    a += 1
-                    if a == 10:
-                        break
 
                 except tf.errors.OutOfRangeError:
                     break
