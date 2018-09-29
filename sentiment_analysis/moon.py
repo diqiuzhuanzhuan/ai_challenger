@@ -132,6 +132,7 @@ class OutputContent(object):
     header = None
     feature = []
     labels = []
+    all = None
 
     @classmethod
     def set_header(cls, line):
@@ -147,24 +148,15 @@ class OutputContent(object):
 
     @classmethod
     def persist(cls, filename="result.csv"):
-        with open(filename, "w") as f:
-            f.write(cls.header)
-            f.write("\n")
-            id = 0
-            for i, j in zip(cls.feature, cls.labels):
-                f.write(str(id))
-                f.write(",")
-                f.write(i)
-                f.write(",")
-                f.write(",".join(map(lambda x: str(x), j)))
-                f.write("\n")
-                id = id + 1
+        for i, line in zip(range(1, len(cls.all)), cls.labels):
+            cls.all.iloc[i, 2:] = line
+        cls.all.to_csv(filename, encoding="utf_8_sig", index=False)
 
 
 class MoonLight(object):
     _train_file_names = DataFiles._train_file_names
     _validation_file_names = DataFiles._validation_file_names
-    _test_file_names = DataFiles._validation_file_names
+    _test_file_names = DataFiles._test_file_names
 
     _batch_size = 64
     _table = None
@@ -212,8 +204,10 @@ class MoonLight(object):
                 yield ids, [len(ids)], labels
 
     def _get_no_label_data(self, file_names):
+        assert len(file_names) <= 1
         for file in file_names:
             lines = pd.read_csv(file, delimiter=",", skiprows=0)
+            OutputContent.all = lines
             OutputContent.header = ",".join(lines.head(0))
             for i in range(1, len(lines)):
                 OutputContent.add_content(lines.iloc[i, 1])
@@ -306,6 +300,7 @@ class MoonLight(object):
     def _create_loss(self):
         with tf.name_scope("create_loss"):
             length = self._labels_num
+#            [tf.argmax(self._next_element[2][:, i, :] for i in range(length))]
             self._loss = tf.stack([tf.losses.softmax_cross_entropy(onehot_labels=self._next_element[2][:, i, :], logits=self._logits[i]) for i in range(length)])
             self._total_loss = tf.reduce_mean(self._loss, axis=0)
 
@@ -319,7 +314,7 @@ class MoonLight(object):
             tf.summary.histogram('histogram loss', self._total_loss)
             self._summary_op = tf.summary.merge_all()
 
-    def build(self, is_train=True):
+    def build(self):
         self.load()
         self._load_train_data()
         self._load_validation_data()
@@ -410,6 +405,7 @@ class MoonLight(object):
                 print("no model!")
                 exit(0)
             sess.run(self._test_iterator, feed_dict={self._batch_size: 1})
+            a = 0
             while True:
                 try:
                     predict = sess.run(
@@ -419,6 +415,9 @@ class MoonLight(object):
                     for line in res:
                         print(line)
                         OutputContent.add_label(line)
+                    a += 1
+                    if a == 10:
+                        break
 
                 except tf.errors.OutOfRangeError:
                     break
@@ -427,4 +426,4 @@ class MoonLight(object):
 
 if __name__ == "__main__":
     ml = MoonLight()
-    ml.train(1)
+    ml.test()
