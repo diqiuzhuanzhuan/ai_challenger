@@ -150,7 +150,7 @@ class OutputContent(object):
     def persist(cls, filename="result.csv"):
         for i, line in zip(range(1, len(cls.all)), cls.labels):
             cls.all.iloc[i, 2:] = line
-        cls.all.iloc[1:, 2:] = cls.all.iloc[1:, 2:].astype(int)
+#        cls.all.iloc[1:, 2:] = cls.all.iloc[1:, 2:].astype(int)
         cls.all.to_csv(filename, encoding="utf_8_sig", index=False)
 
 
@@ -232,7 +232,7 @@ class MoonLight(object):
     def _load_train_data(self):
         train_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
         train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [None]),
-                                                   padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)), drop_remainder=True)
+                                                   padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
         self._iterator = tf.data.Iterator.from_structure(train_dataset.output_types, train_dataset.output_shapes)
         self._next_element = self._iterator.get_next()
@@ -241,7 +241,7 @@ class MoonLight(object):
     def _load_validation_data(self):
         validation_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
         validation_dataset = validation_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [self._labels_num]),
-                                                   padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)), drop_remainder=True)
+                                                   padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         validation_dataset = validation_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
         self._validation_iterator = self._iterator.make_initializer(validation_dataset)
 
@@ -250,7 +250,6 @@ class MoonLight(object):
         test_dataset = test_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [None]),
                                                              padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         test_dataset = test_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
-        self._next_element = self._iterator.get_next()
         self._test_iterator = self._iterator.make_initializer(test_dataset)
         self._actual_batch_size = tf.shape(self._next_element[0])[0]
 
@@ -276,13 +275,12 @@ class MoonLight(object):
 
         with tf.name_scope("create_bilstm"):
             stack_fw_lstm = tf.nn.rnn_cell.MultiRNNCell([lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)])
-            initial_state_fw = stack_fw_lstm.zero_state(tf.to_int32(self._batch_size), tf.float32)
             initial_state_fw = stack_fw_lstm.zero_state(tf.to_int32(self._actual_batch_size), tf.float32)
             stack_bw_lstm = tf.nn.rnn_cell.MultiRNNCell([lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)])
             initial_state_bw = stack_bw_lstm.zero_state(tf.to_int32(self._actual_batch_size), tf.float32)
             self._sentence_encoder_output, self._fw_state, self._bw_state = \
                 rnn.stack_bidirectional_dynamic_rnn(cells_fw=[stack_fw_lstm], cells_bw=[stack_bw_lstm], initial_states_fw=[initial_state_fw],\
-                                                    initial_states_bw=[initial_state_bw], inputs=self._embedding)
+                                                    initial_states_bw=[initial_state_bw], inputs=self._embedding, sequence_length=tf.reshape(self._next_element[1], [-1]), parallel_iterations=128)
 
     def _create_output(self):
         with tf.name_scope("create_output"):
@@ -357,7 +355,7 @@ class MoonLight(object):
                     try:
                         _, loss, summary, f1_score, accuracy, recall, predict = sess.run(
                             [self._optimizer, self._total_loss, self._summary_op, self._train_f1_score, self._train_accuracy, self._train_recall, self._predict],
-                            feed_dict={self._keep_prob: 0.6, self._batch_size: batch_size}
+                            feed_dict={self._keep_prob: 0.6}
                         )
                         res = sess.run(tf.argmax(predict, axis=2) - 2)
                         for line in res:
@@ -386,11 +384,11 @@ class MoonLight(object):
                     except tf.errors.OutOfRangeError:
                         break
 
-                sess.run(self._test_iterator, feed_dict={self._batch_size: 1})
+                sess.run(self._test_iterator, feed_dict={self._batch_size: 256})
                 while True:
                     try:
                         predict = sess.run(
-                            self._predict, feed_dict={self._keep_prob: 1.0, self._batch_size: 1}
+                            self._predict, feed_dict={self._keep_prob: 1.0}
                          )
                         res = sess.run(tf.argmax(predict, axis=2) - 2)
                         for line in res:
@@ -432,4 +430,4 @@ class MoonLight(object):
 
 if __name__ == "__main__":
     ml = MoonLight()
-    ml.test()
+    ml.train(1)
