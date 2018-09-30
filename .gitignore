@@ -3,5 +3,6 @@
 *.csv
 graphs
 checkpoint
+__pycache__
 
 
