@@ -66,7 +66,7 @@ class MoonLight(object):
 
         def lstm_cell(lstm_unit):
             cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=lstm_unit)
-           # cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
+            #cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
             cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, input_keep_prob=self._keep_prob)
             return cell
 
@@ -149,7 +149,7 @@ class MoonLight(object):
                     try:
                         _, loss, summary, f1_score, accuracy, recall, predict = sess.run(
                             [self._optimizer, self._total_loss, self._summary_op, self._train_f1_score, self._train_accuracy, self._train_recall, self._predict],
-                            feed_dict={self._keep_prob: 0.6}
+                            feed_dict={self._keep_prob: 0.3}
                         )
                         res = sess.run(tf.argmax(predict, axis=2) - 2)
                         for line in res:
@@ -192,15 +192,14 @@ class MoonLight(object):
         saver = tf.train.Saver()
         with tf.Session() as sess:
             self.build()
-            sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
+#            sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:
                 saver.restore(sess, ckpt.model_checkpoint_path)
             else:
                 print("no model!")
                 exit(0)
-            sess.run(self._test_iterator, feed_dict={self._batch_size: 128})
-            print(sess.run(self._actual_batch_size))
+            sess.run(self._test_iterator)
             while True:
                 try:
                     predict = sess.run(

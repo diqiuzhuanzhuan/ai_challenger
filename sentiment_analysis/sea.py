@@ -159,7 +159,7 @@ class Data(object):
 
     def _get_has_label_data(self, file_names):
         for file in file_names:
-            lines = pd.read_csv(file, delimiter=",", skiprows=1)
+            lines = pd.read_csv(file, delimiter=",")
             for i in range(len(lines)):
                 sentence = lines.iloc[i, 1].strip("\"")
                 ids = [self._table.lookup(i) for i in sentence]
@@ -175,13 +175,13 @@ class Data(object):
     def _get_no_label_data(self, file_names):
         self._will_output = pd.DataFrame()
         for file in file_names:
-            lines = pd.read_csv(file, delimiter=",", skiprows=0)
+            lines = pd.read_csv(file, delimiter=",")
             if self._will_output is None:
                 self._will_output = pd.DataFrame(lines.columns)
-            self._will_output = self._will_output.append(lines.iloc[1:])
+            self._will_output = self._will_output.append(lines.iloc[:])
             self._will_output = self._will_output.fillna(int(0))
 
-            for i in range(1, len(lines)):
+            for i in range(len(lines)):
                 sentence = lines.iloc[i, 1].strip("\"")
                 ids = [self._table.lookup(k) for k in sentence]
                 yield ids, [len(ids)], [0] * self._labels_num
@@ -238,7 +238,7 @@ class Data(object):
             print("测试数据结果不完整")
         columns = self._will_output.columns
         self._will_output[columns[2:]] = self._will_output[columns[2:]].astype(int)
-        self._will_output.to_csv(filename, index=False)
+        self._will_output.to_csv(filename, index=False, encoding="utf_8_sig")
 
     def calc_weight(self):
         self.load_data()
