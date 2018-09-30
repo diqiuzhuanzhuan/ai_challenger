@@ -46,7 +46,7 @@ class MoonLight(object):
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
         self._actual_batch_size = None
-        self._batch_size = 32
+        self._batch_size = 128
         self._data = Data(self._batch_size)
         self.weights = None
 
