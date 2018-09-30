@@ -160,7 +160,6 @@ class MoonLight(object):
                         print("average_loss is {}".format(average_loss))
                         writer.add_summary(summary, global_step=i)
                         print("train f1_score is {}, accuracy is {}, recall is {}".format(f1_score, accuracy[0], recall[0]))
-                        break
 
                     except tf.errors.OutOfRangeError:
                         break
@@ -173,7 +172,6 @@ class MoonLight(object):
                             feed_dict={self._keep_prob: 1.0})
                         print("validation f1_score is {}, accurancy is {}, recall is {}".format(f1_score, accuracy[0], recall[0]))
                         res = sess.run(tf.argmax(predict, axis=2) - 2)
-                        break
                     except tf.errors.OutOfRangeError:
                         break
 
@@ -185,7 +183,6 @@ class MoonLight(object):
                          )
                         res = sess.run(tf.argmax(predict, axis=2, output_type=tf.int64) - 2)
                         self._data.feed_output(res)
-                        break
                     except tf.errors.OutOfRangeError:
                         break
 
