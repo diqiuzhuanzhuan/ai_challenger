@@ -143,10 +143,11 @@ class MoonLight(object):
                 sess.run(self._train_iterator)
                 while True:
                     try:
-                        _, loss, summary, f1_score, accuracy, recall, predict, labels = sess.run(
-                            [self._optimizer, self._total_loss, self._summary_op, self._train_f1_score, self._train_accuracy, self._train_recall, self._predict, self._next_element[2]],
+                        _, loss, summary, f1_score, accuracy, recall, labels = sess.run(
+                            [self._optimizer, self._total_loss, self._summary_op, self._train_f1_score, self._train_accuracy, self._train_recall, self._next_element[2]],
                             feed_dict={self._keep_prob: 0.4}
                         )
+                        predict = sess.run(self._predict, feed_dict={self._keep_prob: 1.0})
                         lab = sess.run(tf.argmax(labels, axis=2) - 2)
                         res = sess.run(tf.argmax(predict, axis=2) - 2)
                         for l1, l2 in zip(res, lab):
@@ -157,10 +158,12 @@ class MoonLight(object):
                         print("average_loss is {}".format(average_loss))
                         writer.add_summary(summary, global_step=i)
                         print("train f1_score is {}, accuracy is {}, recall is {}".format(f1_score, accuracy[0], recall[0]))
+                        if iteration % 1000 == 0:
+                            saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
 
                     except tf.errors.OutOfRangeError:
                         break
-                saver.save(sess, save_path="checkpoint/moon")
+                saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                 sess.run(self._validation_iterator)
                 while True:
                     try:
@@ -189,7 +192,7 @@ class MoonLight(object):
         saver = tf.train.Saver()
         with tf.Session() as sess:
             self.build()
-#            sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
+            sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:
                 saver.restore(sess, ckpt.model_checkpoint_path)
