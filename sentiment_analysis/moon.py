@@ -8,11 +8,8 @@ email: diqiuzhuanzhuan@gmail.com
 
 import tensorflow as tf
 from tensorflow.contrib import *
-from tensorflow.contrib import data
-import pandas as pd
 import os
-import urllib
-from sea import DataFiles, Data, LookMan
+from sea import DataFiles, Data
 
 os.environ['CUDA_VISIBLE_DEVICES']='0, 1, 2'
 
@@ -30,7 +27,7 @@ class MoonLight(object):
 
     _embedding_dimension = 50
     _lstm_unit = 256
-    _lstm_layers = 1
+    _lstm_layers = 3
     _keep_prob = None
     _attention_length = 40
     _learning_rate = 0.01
@@ -38,15 +35,14 @@ class MoonLight(object):
     _labels_num = 20
     _output_dimension = 4
 
-
-    def __init__(self, embedding_dimension=100):
+    def __init__(self, embedding_dimension=128):
         self._embedding_dimension = embedding_dimension
         self._keep_prob = tf.placeholder(dtype=tf.float32, name="keep_prob")
         self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
         self._actual_batch_size = None
-        self._batch_size = 128
+        self._batch_size = 1
         self._data = Data(self._batch_size)
         self.weights = None
 
@@ -85,7 +81,7 @@ class MoonLight(object):
             output_dimension = self._output_dimension
             input = self._sentence_encoder_output[:, -1, :]
             self._logits = [
-                tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.relu)
+                tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.leaky_relu)
                 for i in range(length)
             ]
             self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i]) for i in range(length)])
@@ -147,13 +143,14 @@ class MoonLight(object):
                 sess.run(self._train_iterator)
                 while True:
                     try:
-                        _, loss, summary, f1_score, accuracy, recall, predict = sess.run(
-                            [self._optimizer, self._total_loss, self._summary_op, self._train_f1_score, self._train_accuracy, self._train_recall, self._predict],
-                            feed_dict={self._keep_prob: 0.3}
+                        _, loss, summary, f1_score, accuracy, recall, predict, labels = sess.run(
+                            [self._optimizer, self._total_loss, self._summary_op, self._train_f1_score, self._train_accuracy, self._train_recall, self._predict, self._next_element[2]],
+                            feed_dict={self._keep_prob: 0.4}
                         )
+                        lab = sess.run(tf.argmax(labels, axis=2) - 2)
                         res = sess.run(tf.argmax(predict, axis=2) - 2)
-                        for line in res:
-                            print(line)
+                        for l1, l2 in zip(res, lab):
+                            print("{}, {}".format(l1, l2))
                         total_loss += loss
                         iteration = iteration + 1
                         average_loss = total_loss/iteration
@@ -215,4 +212,4 @@ class MoonLight(object):
 
 if __name__ == "__main__":
     ml = MoonLight()
-    ml.train(1)
+    ml.train(2)
