@@ -265,7 +265,14 @@ class Data(object):
             print("weights is{}".format(self.weights))
             np.save(self._weight_file, self.weights)
 
+    def test(self):
+        self.load_data()
+        with tf.Session() as sess:
+            sess.run(self._train_iterator)
+            res = sess.run([self._next_element[0], self._next_element[1]])
+            print(res)
+
 
 if __name__ == "__main__":
     d = Data()
-    d.load_data()
+    d.test()
