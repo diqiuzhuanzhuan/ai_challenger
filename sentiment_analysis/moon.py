@@ -46,7 +46,7 @@ class MoonLight(object):
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
         self._actual_batch_size = None
-        self._batch_size = 1
+        self._batch_size = 32
         self._data = Data(self._batch_size)
         self.weights = None
 
@@ -77,17 +77,21 @@ class MoonLight(object):
             initial_state_fw = stack_fw_lstm.zero_state(tf.to_int32(self._actual_batch_size), tf.float32)
             stack_bw_lstm = tf.nn.rnn_cell.MultiRNNCell([lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)])
             initial_state_bw = stack_bw_lstm.zero_state(tf.to_int32(self._actual_batch_size), tf.float32)
-            self._sentence_encoder_output, self._fw_state, self._bw_state = \
-                rnn.stack_bidirectional_dynamic_rnn(cells_fw=[stack_fw_lstm], cells_bw=[stack_bw_lstm], initial_states_fw=[initial_state_fw],\
-                                                    initial_states_bw=[initial_state_bw], inputs=self._embedding, sequence_length=tf.reshape(self._feature_length, [-1]), parallel_iterations=128)
+            self._sentence_encoder_output, self._states = tf.nn.bidirectional_dynamic_rnn(cell_fw=stack_fw_lstm, cell_bw=stack_bw_lstm, inputs=self._embedding, sequence_length=tf.reshape(self._feature_length, [-1]),
+                                            initial_state_fw=initial_state_fw, initial_state_bw=initial_state_bw)
+#                rnn.stack_bidirectional_dynamic_rnn(cells_fw=[stack_fw_lstm], cells_bw=[stack_bw_lstm], initial_states_fw=[initial_state_fw],\
+#                                                    initial_states_bw=[initial_state_bw], inputs=self._embedding, sequence_length=tf.reshape(self._feature_length, [-1]), parallel_iterations=128)
+            self._sentence_encoder_output = tf.concat(self._sentence_encoder_output, 2)
 
     def _create_output(self):
         with tf.name_scope("create_output"):
             length = self._labels_num
             output_dimension = self._output_dimension
-            input = self._sentence_encoder_output[:, -1, :]
+            indices = tf.stack([tf.range(self._actual_batch_size, dtype=tf.int32), tf.to_int32(tf.reshape(self._feature_length-1, [-1]))], axis=1)
+            self._input = tf.gather_nd(self._sentence_encoder_output, indices)
+
             self._logits = [
-                tf.layers.dense(inputs=input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.relu)
+                tf.layers.dense(inputs=self._input, units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i), activation=tf.nn.relu)
                 for i in range(length)
             ]
             self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i]) for i in range(length)])
@@ -147,7 +151,7 @@ class MoonLight(object):
         sess.run(self._validation_iterator_initializer)
         while True:
             try:
-                feature, len, label = sess.run(self._validation_iterator.get_next())
+                feature, len, label = sess.run(validation_next)
                 accuracy, recall, predict = sess.run(
                     [self._validation_accuracy, self._validation_recall, self._predict],
                     feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
@@ -184,10 +188,12 @@ class MoonLight(object):
                 while True:
                     try:
                         feature, len, label = sess.run(train_next)
-                        _, loss, summary = sess.run(
-                            [self._optimizer, self._total_loss, self._summary_op],
+                        _, loss, summary, sen, input = sess.run(
+                            [self._optimizer, self._total_loss, self._summary_op, self._sentence_encoder_output, self._input],
                             feed_dict={self._keep_prob: 0.4, self._feature: feature, self._feature_length: len, self._label: label}
                         )
+                        print("input is {}".format(input))
+
                         total_loss += loss
                         iteration = iteration + 1
                         average_loss = total_loss/iteration

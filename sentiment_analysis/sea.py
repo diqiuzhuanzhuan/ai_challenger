@@ -270,10 +270,10 @@ class Data(object):
     def test(self):
         self.load_data()
         with tf.Session() as sess:
-            sess.run(self._train_iterator_initializer)
+            sess.run(self._validation_iterator_initializer)
             while True:
                 try:
-                    res = sess.run(self._train_iterator.get_next())
+                    res = sess.run(self._validation_iterator.get_next())
                     print(res)
                 except tf.errors.OutOfRangeError:
                     break
