@@ -203,30 +203,32 @@ class Data(object):
         train_dataset = train_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [None]),
                                                    padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
-        self._iterator = tf.data.Iterator.from_structure(train_dataset.output_types, train_dataset.output_shapes)
-        self._next_element = self._iterator.get_next()
-        self._train_iterator = self._iterator.make_initializer(train_dataset)
+        self._train_iterator = tf.data.Iterator.from_structure(train_dataset.output_types, train_dataset.output_shapes)
+        self._train_iterator_initializer = self._train_iterator.make_initializer(train_dataset)
+
 
     def _load_validation_data(self):
         validation_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
         validation_dataset = validation_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [self._labels_num]),
                                                              padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         validation_dataset = validation_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
-        self._validation_iterator = self._iterator.make_initializer(validation_dataset)
+        self._validation_iterator = tf.data.Iterator.from_structure(validation_dataset.output_types, validation_dataset.output_shapes)
+        self._validation_iterator_initializer = self._validation_iterator.make_initializer(validation_dataset)
 
     def _load_test_data(self):
         test_dataset = tf.data.Dataset.from_generator(self._gen_test_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
         test_dataset = test_dataset.padded_batch(self._batch_size, padded_shapes=([None], [None], [None]),
                                                  padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         test_dataset = test_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
-        self._test_iterator = self._iterator.make_initializer(test_dataset)
+        self._test_iterator = tf.data.Iterator.from_structure(test_dataset.output_types,test_dataset.output_shapes)
+        self._test_iterator_initializer = self._test_iterator.make_initializer(test_dataset)
 
     def load_data(self):
         self._load_weight()
         self._load_train_data()
         self._load_validation_data()
         self._load_test_data()
-        return self._train_iterator, self._validation_iterator, self._test_iterator, self._next_element
+        return self._train_iterator, self._train_iterator_initializer, self._validation_iterator, self._validation_iterator_initializer, self._test_iterator, self._test_iterator_initializer
 
     def feed_output(self, labels):
         for line in labels:
@@ -244,18 +246,18 @@ class Data(object):
         self.load_data()
         all = []
         with tf.Session() as sess:
-            sess.run(self._train_iterator)
+            sess.run(self._train_iterator_initializer)
             while True:
                 try:
-                    res = sess.run(self._next_element[2])
+                    res = sess.run(self._train_iterator.get_next())
                     all.extend(res)
                 except tf.errors.OutOfRangeError:
                     break
 
-            sess.run(self._validation_iterator)
+            sess.run(self._validation_iterator_initializer)
             while True:
                 try:
-                    res = sess.run(self._next_element[2])
+                    res = sess.run(self._validation_iterator.get_next())
                     all.extend(res)
                 except tf.errors.OutOfRangeError:
                     break
@@ -268,9 +270,13 @@ class Data(object):
     def test(self):
         self.load_data()
         with tf.Session() as sess:
-            sess.run(self._train_iterator)
-            res = sess.run([self._next_element[0], self._next_element[2]])
-            print(res)
+            sess.run(self._train_iterator_initializer)
+            while True:
+                try:
+                    res = sess.run(self._train_iterator.get_next())
+                    print(res)
+                except tf.errors.OutOfRangeError:
+                    break
 
 
 if __name__ == "__main__":
