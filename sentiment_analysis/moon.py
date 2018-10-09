@@ -165,7 +165,6 @@ class MoonLight(object):
                     [self._predict, self._actual_batch_size, self._logits],
                     feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
                 )
-                print(logits[:][0], logits[:][3])
 
                 lab, res = sess.run([tf.argmax(label, axis=2) - 2, tf.argmax(predict, axis=2) - 2])
                 for l1, l2 in zip(res, lab):
