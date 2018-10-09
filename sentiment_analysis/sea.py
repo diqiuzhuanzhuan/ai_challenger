@@ -269,7 +269,7 @@ class Data(object):
         self.load_data()
         with tf.Session() as sess:
             sess.run(self._train_iterator)
-            res = sess.run([self._next_element[0], self._next_element[1]])
+            res = sess.run([self._next_element[0], self._next_element[2]])
             print(res)
 
 

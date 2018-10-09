@@ -10,6 +10,7 @@ import tensorflow as tf
 from tensorflow.contrib import *
 import os
 from sea import DataFiles, Data
+from sklearn.metrics import f1_score
 
 os.environ['CUDA_VISIBLE_DEVICES']='0, 1, 2'
 
@@ -42,7 +43,7 @@ class MoonLight(object):
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
         self._actual_batch_size = None
-        self._batch_size = 1
+        self._batch_size = 32
         self._data = Data(self._batch_size)
         self.weights = None
 
@@ -90,12 +91,21 @@ class MoonLight(object):
             self._predict = tf.transpose(self._predict, [1, 0, 2])
 
     def _create_metrics(self):
-            self._train_accuracy = tf.metrics.accuracy(tf.reshape(self._next_element[2], shape=[-1]), tf.reshape(self._predict, shape=[-1]), name="train_accuracy")
-            self._train_recall = tf.metrics.recall(tf.reshape(self._next_element[2], shape=[-1]), tf.reshape(self._predict, shape=[-1]), name="train_recall")
+        with tf.name_scope("create_metrics"):
+            self._train_accuracy = tf.metrics.accuracy(tf.reshape(self._next_element[2], shape=[self._actual_batch_size, -1]), tf.reshape(self._predict, shape=[self._actual_batch_size, -1]), name="train_accuracy")
+            self._train_recall = tf.metrics.recall(tf.reshape(self._next_element[2], shape=[self._actual_batch_size, -1]), tf.reshape(self._predict, shape=[self._actual_batch_size, -1]), name="train_recall")
             self._train_f1_score = 2 * self._train_accuracy[0] * self._train_recall[0] / (self._train_accuracy[0] + self._train_recall[0])
-            self._validation_accuracy = tf.metrics.accuracy(tf.reshape(self._next_element[2], shape=[-1]), tf.reshape(self._predict, shape=[-1]), name="validation_accuracy")
-            self._validation_recall = tf.metrics.recall(tf.reshape(self._next_element[2], shape=[-1]), tf.reshape(self._predict, shape=[-1]), name="validation_recall")
+            self._validation_accuracy = tf.metrics.accuracy(tf.reshape(self._next_element[2], shape=[self._actual_batch_size, -1]), tf.reshape(self._predict, shape=[self._actual_batch_size, -1]), name="validation_accuracy")
+            self._validation_recall = tf.metrics.recall(tf.reshape(self._next_element[2], shape=[self._actual_batch_size, -1]), tf.reshape(self._predict, shape=[self._actual_batch_size, -1]), name="validation_recall")
             self._validation_f1_score = 2 * self._validation_accuracy[0] * self._validation_recall[0] / (self._validation_accuracy[0] + self._validation_recall[0])
+            """
+            print(self._next_element[2].get_shape())
+            next_element = tf.reshape(self._next_element[2], shape=[self._actual_batch_size, self._labels_num, -1])
+            self._train_accuracy = [tf.metrics.accuracy(name="train_acc"+str(i),labels=tf.reshape(next_element[:][i], shape=[self._actual_batch_size, -1]), predictions=tf.reshape(self._predict[:][i], shape=[self._actual_batch_size, -1])) for i in range(self._labels_num)]
+            self._train_recall = [tf.metrics.recall(name="train_recall"+str(i),labels=tf.reshape(next_element[:][i], shape=[self._actual_batch_size, -1]), predictions=tf.reshape(self._predict[:][i], shape=[self._actual_batch_size, -1])) for i in range(self._labels_num)]
+            self._train_f1_score = tf.stack([2 * self._train_accuracy[i][0] * self._train_recall[i][0] for i in range(self._labels_num)])
+            self._train_f1_score = tf.reduce_mean(self._train_f1_score, axis=0)
+            """
 
     def _create_loss(self):
         with tf.name_scope("create_loss"):
@@ -139,25 +149,20 @@ class MoonLight(object):
             print("initial_step is {}".format(initial_step))
             total_loss = 0.0
             iteration = 0
+            f1 = 0
             for i in range(initial_step, initial_step+epoches):
                 sess.run(self._train_iterator)
                 while True:
                     try:
-                        _, loss, summary, f1_score, accuracy, recall, labels = sess.run(
-                            [self._optimizer, self._total_loss, self._summary_op, self._train_f1_score, self._train_accuracy, self._train_recall, self._next_element[2]],
+                        _, loss, summary = sess.run(
+                            [self._optimizer, self._total_loss, self._summary_op],
                             feed_dict={self._keep_prob: 0.4}
                         )
-                        predict = sess.run(self._predict, feed_dict={self._keep_prob: 1.0})
-                        lab = sess.run(tf.argmax(labels, axis=2) - 2)
-                        res = sess.run(tf.argmax(predict, axis=2) - 2)
-                        for l1, l2 in zip(res, lab):
-                            print("{}, {}".format(l1, l2))
                         total_loss += loss
                         iteration = iteration + 1
                         average_loss = total_loss/iteration
                         print("average_loss is {}".format(average_loss))
                         writer.add_summary(summary, global_step=i)
-                        print("train f1_score is {}, accuracy is {}, recall is {}".format(f1_score, accuracy[0], recall[0]))
                         if iteration % 1000 == 0:
                             saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
 
@@ -165,13 +170,20 @@ class MoonLight(object):
                         break
                 saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                 sess.run(self._validation_iterator)
+                iteration = 0
                 while True:
                     try:
-                        f1_score, accuracy, recall, predict = sess.run(
-                            [self._validation_f1_score, self._validation_accuracy, self._validation_recall, self._predict],
+
+                        accuracy, recall, predict, labels = sess.run(
+                            [self._validation_accuracy, self._validation_recall, self._predict, self._next_element[2]],
                             feed_dict={self._keep_prob: 1.0})
-                        print("validation f1_score is {}, accurancy is {}, recall is {}".format(f1_score, accuracy[0], recall[0]))
-                        res = sess.run(tf.argmax(predict, axis=2) - 2)
+                        lab, res = sess.run([tf.argmax(labels, axis=2) - 2, tf.argmax(predict, axis=2) - 2])
+                        for l1, l2 in zip(res, lab):
+                            f1 += f1_score(l2, l1, average="macro")
+                            print(l1, l2)
+                        iteration += 1
+                        average_f1 = f1 / (iteration * self._batch_size)
+                        print("average_f1 is {}".format(average_f1))
                     except tf.errors.OutOfRangeError:
                         break
 
