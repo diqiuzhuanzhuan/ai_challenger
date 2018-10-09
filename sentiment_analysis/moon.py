@@ -143,6 +143,8 @@ class MoonLight(object):
         f1 = 0
         iteration = 0
         average_f1 = 0
+        validation_next = self._validation_iterator.get_next()
+        sess.run(self._validation_iterator_initializer)
         while True:
             try:
                 feature, len, label = sess.run(self._validation_iterator.get_next())
