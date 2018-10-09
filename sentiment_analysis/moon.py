@@ -28,7 +28,7 @@ class MoonLight(object):
 
     _embedding_dimension = 50
     _lstm_unit = 256
-    _lstm_layers = 3
+    _lstm_layers = 2
     _keep_prob = None
     _attention_length = 40
     _learning_rate = 0.001
@@ -46,7 +46,7 @@ class MoonLight(object):
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
         self._actual_batch_size = None
-        self._batch_size = 32
+        self._batch_size = 64
         self._data = Data(self._batch_size)
         self.weights = None
 
@@ -68,7 +68,7 @@ class MoonLight(object):
 
         def lstm_cell(lstm_unit):
             cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=lstm_unit)
-            #cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
+#            cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
             cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, input_keep_prob=self._keep_prob)
             return cell
 
@@ -188,11 +188,10 @@ class MoonLight(object):
                 while True:
                     try:
                         feature, len, label = sess.run(train_next)
-                        _, loss, summary, sen, input = sess.run(
-                            [self._optimizer, self._total_loss, self._summary_op, self._sentence_encoder_output, self._input],
+                        _, loss, summary= sess.run(
+                            [self._optimizer, self._total_loss, self._summary_op],
                             feed_dict={self._keep_prob: 0.4, self._feature: feature, self._feature_length: len, self._label: label}
                         )
-                        print("input is {}".format(input))
 
                         total_loss += loss
                         iteration = iteration + 1
