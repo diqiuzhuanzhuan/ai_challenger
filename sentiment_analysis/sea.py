@@ -90,7 +90,7 @@ class LookMan(object):
 
 
 class Config(object):
-    _use_lemma = True
+    _use_lemma = False
 
 
 class Data(object):

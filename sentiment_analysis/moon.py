@@ -134,8 +134,9 @@ class MoonLight(object):
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
-            self._optimizer = tf.train.AdagradOptimizer(learning_rate=1.0).minimize(self._loss, global_step=self.global_step)
-            self._all_optimizer = [tf.train.AdagradOptimizer(learning_rate=1.0).minimize(self._loss_[i], global_step=self.global_step) for i in range(self._labels_num)]
+            self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate).minimize(self._loss, global_step=self.global_step)
+#            self._optimizer = tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._loss, global_step=self.global_step)
+            self._all_optimizer = [tf.train.AdamOptimizer(learning_rate=self._learning_rate).minimize(self._loss_[i], global_step=self.global_step) for i in range(self._labels_num)]
 
     def _create_summary(self):
         with tf.name_scope("summary"):
@@ -213,14 +214,14 @@ class MoonLight(object):
                             _, loss, summary, _loss = sess.run(
                                 [self._optimizer, self._total_loss, self._summary_op, self._loss_],
                                 feed_dict={
-                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label, self._learning_rate: 0.5
+                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label, self._learning_rate: 5.0
                                 }
                             )
                         else:
                             _, loss, summary, _loss, max_loss_indice = sess.run(
                                 [self._all_optimizer[max_loss_indice], self._total_loss, self._summary_op, self._loss_, tf.argmax(self._loss, axis=0)],
                                 feed_dict={
-                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label, self._learning_rate: 0.5
+                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label, self._learning_rate: 0.8
                                 }
 
                             )
