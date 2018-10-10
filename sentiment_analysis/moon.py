@@ -5,6 +5,7 @@ author: diqiuzhuanzhuan
 email: diqiuzhuanzhuan@gmail.com
 
 """
+import time
 
 import tensorflow as tf
 from tensorflow.contrib import *
@@ -46,7 +47,6 @@ class MoonLight(object):
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
         self._learning_rate = tf.placeholder(name="learning_rate", dtype=tf.float32)
         self._actual_batch_size = None
-        self._batch_size = 32
         self._data = Data(self._batch_size)
         self.weights = None
         self.graph = tf.Graph()
@@ -157,27 +157,31 @@ class MoonLight(object):
 
     def validation(self, sess):
         f1 = 0
-        iteration = 0
         samples = 0
-        average_f1 = 0
-        sess.run(self._validation_iterator_initializer)
+        sess.run(self._validation_iterator_initializer, feed_dict={self._batch_size: 512})
+        all_lab = []
+        all_res = []
+        print("对验证集进行验证....")
         while True:
             try:
+                delta_t = time.time()
                 feature, len, label = sess.run(self._validation_next)
-                predict, actual_batch_size, logits = sess.run(
-                    [self._predict, self._actual_batch_size, self._logits],
+                predict, actual_batch_size = sess.run(
+                    [self._predict, self._actual_batch_size],
                     feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
                 )
 
                 lab, res = sess.run([tf.argmax(label, axis=2) - 2, tf.argmax(predict, axis=2) - 2])
-                for l1, l2 in zip(res, lab):
-                    f1 += f1_score(l2, l1, average="macro")
-                    print(l1, l2)
-                iteration += 1
+                all_lab.extend(lab)
+                all_res.extend(res)
                 samples += actual_batch_size
-                average_f1 = f1 / samples
-                print("average_f1 is {}".format(average_f1))
+                delta_t = time.time() - delta_t
+                print("cost time {} sec".format(delta_t))
             except tf.errors.OutOfRangeError:
+                print("正在计算f1 score, 请稍等")
+                for l1, l2 in zip(all_res, all_lab):
+                    f1 += f1_score(l2, l1, average="macro")
+                average_f1 = f1 / samples
                 print("验证集运行完毕，平均f1为: {}".format(average_f1))
                 break
 
@@ -200,9 +204,10 @@ class MoonLight(object):
             train_next = self._train_iterator.get_next()
             max_loss_indice = None
             for i in range(initial_step, initial_step+epoches):
-                sess.run(self._train_iterator_initializer)
+                sess.run(self._train_iterator_initializer, feed_dict={self._batch_size: 32})
                 while True:
                     try:
+                        delta_t = time.time()
                         feature, len, label = sess.run(train_next)
                         if iteration < 10000 or not max_loss_indice:
                             _, loss, summary, _loss = sess.run(
@@ -219,13 +224,14 @@ class MoonLight(object):
                                 }
 
                             )
-
+                        delta_t = time.time() - delta_t
                         print(_loss)
                         total_loss += loss
                         iteration = iteration + 1
                         average_loss = total_loss/iteration
-                        print("iteration is {}, average_loss is {}".format(iteration, average_loss))
+                        print("iteration is {}, average_loss is {}, cost time {} sec".format(iteration, average_loss, delta_t))
                         writer.add_summary(summary, global_step=iteration)
+                        self.validation(sess)
                         if iteration % 1000 == 0:
                             saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                             self.validation(sess)
@@ -246,7 +252,7 @@ class MoonLight(object):
                 print("no model!")
                 exit(0)
             test_next = self._test_iterator.get_next()
-            sess.run(self._test_iterator)
+            sess.run(self._test_iterator_initializer, feed_dict={self._batch_size: 256})
             while True:
                 try:
                     feature, len, label = sess.run(test_next)
