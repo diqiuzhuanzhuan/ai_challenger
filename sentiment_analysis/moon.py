@@ -27,11 +27,11 @@ class MoonLight(object):
     _train_batch = None
 
     _embedding_dimension = 50
-    _lstm_unit = 256
+    _lstm_unit = 128
     _lstm_layers = 1
     _keep_prob = None
     _attention_length = 40
-    _learning_rate = 0.1
+    _learning_rate = 0.01
     #训练数据中标签总共有20个
     _labels_num = 20
     _output_dimension = 4
@@ -46,9 +46,10 @@ class MoonLight(object):
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
         self._actual_batch_size = None
-        self._batch_size = 64
+        self._batch_size = 32
         self._data = Data(self._batch_size)
         self.weights = None
+        self.graph = tf.Graph()
 
     def load_data(self):
 
@@ -60,7 +61,7 @@ class MoonLight(object):
 
     def _create_embedding(self):
         with tf.name_scope("create_embedding"):
-            self._embedding_matrix = tf.get_variable(name="embedding_matrix", shape=[self._data._vocab_size, self._embedding_dimension],
+            self._embedding_matrix = tf.get_variable(name="embedding_matrix", shape=[self._data.get_vocab_size(), self._embedding_dimension],
                                               initializer=tf.variance_scaling_initializer)
 
             self._embedding = tf.nn.embedding_lookup(self._embedding_matrix, self._feature, name="embedding")
@@ -99,7 +100,7 @@ class MoonLight(object):
                 tf.layers.dense(inputs=self._logits[i], units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i*10, stddev=0.01, mean=0), activation=tf.nn.sigmoid)
                 for i in range(length)
             ]
-            self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i]) for i in range(length)])
+            self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i], name="softmax"+str(i)) for i in range(length)])
             self._predict = tf.argmax(self._predict, axis=2)
             self._predict = tf.one_hot(self._predict, depth=output_dimension, dtype=tf.int64)
             self._predict = tf.transpose(self._predict, [1, 0, 2])
@@ -128,11 +129,11 @@ class MoonLight(object):
             w = [tf.nn.embedding_lookup(self.weights[i], tf.argmax(self._label[:, i, :], axis=1)) for i in range(length)]
             self._loss_ = [tf.losses.softmax_cross_entropy(onehot_labels=self._label[:, i, :], logits=self._logits[i], weights=w[i]) for i in range(length)]
             self._loss = tf.stack(self._loss_)
-            self._total_loss = tf.reduce_sum(self._loss, axis=0)
+            self._total_loss = tf.reduce_mean(self._loss, axis=0)
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
-            self._optimizer = tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._total_loss, global_step=self.global_step)
+            self._optimizer = tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._loss_[0], global_step=self.global_step)
             self._all_optimizer = [tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._loss_[i], global_step=self.global_step) for i in range(self._labels_num)]
 
 
@@ -181,14 +182,16 @@ class MoonLight(object):
     def train(self, epoches=10):
         if not os.path.exists("checkpoint"):
             os.mkdir("checkpoint")
-        saver = tf.train.Saver()
-        with tf.Session() as sess:
-            self.build()
+
+        with self.graph.as_default():
+            saver = tf.train.Saver()
+        self.build()
+        with tf.Session(graph=self.graph) as sess:
             sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:
                 saver.restore(sess, ckpt.model_checkpoint_path)
-            writer = tf.summary.FileWriter('graphs/ai_challenger/learning_rate' + str(self._learning_rate), sess.graph)
+            writer = tf.summary.FileWriter('graphs/ai_challenger/learning_rate' + str(self._learning_rate), self.graph)
             initial_step = self.global_step.eval()
             print("initial_step is {}".format(initial_step))
             total_loss = 0.0
@@ -200,22 +203,26 @@ class MoonLight(object):
                 while True:
                     try:
                         feature, len, label = sess.run(train_next)
-                        _, loss, summary = sess.run(
-                            [self._all_optimizer, self._total_loss, self._summary_op],
-                            feed_dict={self._keep_prob: 0.8, self._feature: feature, self._feature_length: len, self._label: label}
+                        _, loss, summary, _loss, embedding = sess.run(
+                            [self._optimizer, self._total_loss, self._summary_op, self._loss_, self._embedding],
+                            feed_dict={self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label}
                         )
+                        print(_loss)
+                        print(embedding)
                         total_loss += loss
                         iteration = iteration + 1
                         average_loss = total_loss/iteration
                         print("average_loss is {}".format(average_loss))
-                        self.validation(sess)
                         writer.add_summary(summary, global_step=i)
-                        if iteration % 100 == 0:
+                        self.validation(sess)
+                        if iteration % 200 == 0:
                             saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                             self.validation(sess)
 
                     except tf.errors.OutOfRangeError:
+                        saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                         break
+
                 sess.run(self._test_iterator_initializer)
                 while True:
                     try:
@@ -232,8 +239,10 @@ class MoonLight(object):
                 self._data.persist()
 
     def test(self):
-        saver = tf.train.Saver()
-        with tf.Session() as sess:
+        with self.graph.as_default():
+            saver = tf.train.Saver()
+
+        with tf.Session(graph=self.graph) as sess:
             self.build()
             sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)

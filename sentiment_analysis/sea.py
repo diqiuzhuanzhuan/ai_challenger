@@ -14,18 +14,20 @@ from tensorflow.contrib import data
 import pandas as pd
 from collections import defaultdict
 import numpy as np
+import jieba
 
 
 class DataFiles:
     _train_file_names = ["./data/ai_challenger_sentiment_analysis_trainingset_20180816/sentiment_analysis_trainingset.csv"]
-#    _train_file_names = ["./data/ai_challenger_sentiment_analysis_trainingset_20180816/train.csv"]
+    #_train_file_names = ["./data/ai_challenger_sentiment_analysis_trainingset_20180816/train.csv"]
     _train_file_url = ["http://www.diqiuzhuanzhuan.com/download/344/"]
     _validation_file_names = ["./data/ai_challenger_sentiment_analysis_validationset_20180816/sentiment_analysis_validationset.csv"]
-#    _validation_file_names = ["./data/ai_challenger_sentiment_analysis_validationset_20180816/train.csv"]
+    #_validation_file_names = ["./data/ai_challenger_sentiment_analysis_validationset_20180816/train.csv"]
     _validation_file_url = ["http://www.diqiuzhuanzhuan.com/download/346/"]
     _test_file_names = ["./data/ai_challenger_sentiment_analysis_testa_20180816/sentiment_analysis_testa.csv"]
     _test_file_url = ["http://www.diqiuzhuanzhuan.com/download/334/"]
     _dict_file = "./data/words.dict"
+    _lemma_file = "./data/words.lemma"
 
     _record_defaults = [tf.constant([0], dtype=tf.int32), tf.constant([], dtype=tf.string), tf.constant([0], dtype=tf.int32),
                         tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32),
@@ -88,6 +90,10 @@ class LookMan(object):
         return self._table.__len__() + 1
 
 
+class Config(object):
+    _use_lemma = False
+
+
 class Data(object):
     _labels_num = 20
 
@@ -111,6 +117,51 @@ class Data(object):
             print("weight文件已经存在，不再重新计算，如需重新计算，请删除文件:{}".format(self._weight_file))
             self.weights = np.load(self._weight_file+".npy")
             print(self.weights)
+
+    def get_vocab_size(self):
+        if Config._use_lemma:
+            return self._lemma_size
+        else:
+            return self._vocab_size
+
+    def _build_lemma(self):
+        import os
+        print("正在准备数据集")
+        DataFiles._prepare_data()
+        print("数据集已准备完毕")
+        if os.path.exists(DataFiles._lemma_file):
+            print("词典文件已经存在，不必再生成, 如果你想重新生成，请先手动删除该文件：{}".format(DataFiles._lemma_file))
+            return
+        print("词典文件还没有构建，正在为您构建字典文件，请稍等......")
+        files = DataFiles._train_file_names + DataFiles._validation_file_names + DataFiles._test_file_names
+        dataset = data.CsvDataset(files, DataFiles._record_defaults, header=True)
+        iterator = dataset.make_initializable_iterator()
+        next_element = iterator.get_next()
+        words = set()
+        lines_count = 0
+        with tf.Session() as sess:
+            sess.run(iterator.initializer)
+            while True:
+                try:
+                    line = sess.run(next_element)
+                    line = str(line[1], encoding="utf-8")
+                    line = line.strip("\"\t \r")
+
+                    s = jieba.cut(line)
+                    [words.add(x) for x in s]
+                    lines_count = lines_count + 1
+                    print("\r已读取{}行".format(lines_count), end="")
+                except tf.errors.OutOfRangeError as e:
+                    break
+                except Exception as e:
+                    print(e)
+            tf.assert_equal(lines_count, 135000)
+
+            sess.run(tf.write_file(filename=DataFiles._lemma_file, contents="\n".join(words)))
+
+            print("词语数一共有:{} ".format(words.__len__()))
+            print("一共有{}行数据".format(lines_count))
+            print("词典典文件构建完毕~~~")
 
     def _build_vocab(self):
         import os
@@ -155,16 +206,24 @@ class Data(object):
 
     def load_dict(self):
         self._build_vocab()
+        self._build_lemma()
         self._table = LookMan(DataFiles._dict_file, num_oov_buckets=1)
+        self._lemma_table = LookMan(DataFiles._lemma_file, num_oov_buckets=1)
         self._vocab_size = self._table.size()
+        self._lemma_size = self._lemma_table.size()
         print("字典文件加载完成，字典大小为: {}".format(self._vocab_size))
+        print("词典文件加载完成，词典大小为: {}".format(self._lemma_size))
+
 
     def _get_has_label_data(self, file_names):
         for file in file_names:
             lines = pd.read_csv(file, delimiter=",")
             for i in range(len(lines)):
                 sentence = lines.iloc[i, 1].strip("\"")
-                ids = [self._table.lookup(i) for i in sentence]
+                if Config._use_lemma:
+                    ids = [self._lemma_table.lookup(i) for i in jieba.cut(sentence) ]
+                else:
+                    ids = [self._table.lookup(i) for i in sentence]
                 labels = []
                 for j in range(2, 2+self._labels_num, 1):
                     code = lines.iloc[i, j]
@@ -185,7 +244,11 @@ class Data(object):
 
             for i in range(len(lines)):
                 sentence = lines.iloc[i, 1].strip("\"")
-                ids = [self._table.lookup(k) for k in sentence]
+                if Config._use_lemma:
+                    ids = [self._lemma_table.lookup(i) for i in jieba.cut(sentence)]
+                else:
+                    ids = [self._table.lookup(i) for i in sentence]
+
                 yield ids, [len(ids)], [0] * self._labels_num
 
     def _get_validation_data(self):
@@ -207,7 +270,6 @@ class Data(object):
         train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
         self._train_iterator = tf.data.Iterator.from_structure(train_dataset.output_types, train_dataset.output_shapes)
         self._train_iterator_initializer = self._train_iterator.make_initializer(train_dataset)
-
 
     def _load_validation_data(self):
         validation_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
@@ -284,4 +346,4 @@ class Data(object):
 
 if __name__ == "__main__":
     d = Data()
-    d.calc_weight()
+    d.test()
