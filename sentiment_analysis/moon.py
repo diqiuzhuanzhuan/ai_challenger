@@ -134,12 +134,14 @@ class MoonLight(object):
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
-            self._optimizer = tf.train.AdagradOptimizer(learning_rate=0.5).minimize(self._loss, global_step=self.global_step)
-            self._all_optimizer = [tf.train.AdagradOptimizer(learning_rate=0.5).minimize(self._loss_[i], global_step=self.global_step) for i in range(self._labels_num)]
+            self._optimizer = tf.train.AdagradOptimizer(learning_rate=1.0).minimize(self._loss, global_step=self.global_step)
+            self._all_optimizer = [tf.train.AdagradOptimizer(learning_rate=1.0).minimize(self._loss_[i], global_step=self.global_step) for i in range(self._labels_num)]
 
     def _create_summary(self):
         with tf.name_scope("summary"):
             tf.summary.scalar('loss', self._total_loss)
+            [tf.summary.scalar('loss ['+str(i)+']', self._loss_[i]) for i in range(self._labels_num)]
+            [tf.summary.histogram('histogram loss[' +str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
             tf.summary.histogram('histogram loss', self._total_loss)
             self._summary_op = tf.summary.merge_all()
 
@@ -210,7 +212,6 @@ class MoonLight(object):
                                 }
                             )
                         else:
-                            print("最大loss的是{}".format(i))
                             _, loss, summary, _loss, max_loss_indice = sess.run(
                                 [self._all_optimizer[max_loss_indice], self._total_loss, self._summary_op, self._loss_, tf.argmax(self._loss, axis=0)],
                                 feed_dict={
@@ -223,9 +224,9 @@ class MoonLight(object):
                         total_loss += loss
                         iteration = iteration + 1
                         average_loss = total_loss/iteration
-                        print("average_loss is {}".format(average_loss))
-                        writer.add_summary(summary, global_step=i)
-                        if iteration % 400 == 0:
+                        print("iteration is {}, average_loss is {}".format(iteration, average_loss))
+                        writer.add_summary(summary, global_step=iteration)
+                        if iteration % 1000 == 0:
                             saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                             self.validation(sess)
 
