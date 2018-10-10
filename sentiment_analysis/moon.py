@@ -134,8 +134,8 @@ class MoonLight(object):
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
-            self._optimizer = tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._loss_[2], global_step=self.global_step)
-            self._all_optimizer = [tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._loss_[i], global_step=self.global_step) for i in range(self._labels_num)]
+            self._optimizer = tf.train.AdagradOptimizer(learning_rate=0.5).minimize(self._loss, global_step=self.global_step)
+            self._all_optimizer = [tf.train.AdagradOptimizer(learning_rate=0.5).minimize(self._loss_[i], global_step=self.global_step) for i in range(self._labels_num)]
 
     def _create_summary(self):
         with tf.name_scope("summary"):
@@ -196,47 +196,42 @@ class MoonLight(object):
             total_loss = 0.0
             iteration = 0
             train_next = self._train_iterator.get_next()
-            test_next = self._test_iterator.get_next()
+            max_loss_indice = None
             for i in range(initial_step, initial_step+epoches):
                 sess.run(self._train_iterator_initializer)
                 while True:
                     try:
                         feature, len, label = sess.run(train_next)
-                        _, loss, summary, _loss = sess.run(
-                            [self._optimizer, self._total_loss, self._summary_op, self._loss_],
-                            feed_dict={
-                                self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label, self._learning_rate: 0.01
-                            }
-                        )
+                        if iteration < 10000 or not max_loss_indice:
+                            _, loss, summary, _loss = sess.run(
+                                [self._optimizer, self._total_loss, self._summary_op, self._loss_],
+                                feed_dict={
+                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label, self._learning_rate: 0.5
+                                }
+                            )
+                        else:
+                            print("最大loss的是{}".format(i))
+                            _, loss, summary, _loss, max_loss_indice = sess.run(
+                                [self._all_optimizer[max_loss_indice], self._total_loss, self._summary_op, self._loss_, tf.argmax(self._loss, axis=0)],
+                                feed_dict={
+                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label, self._learning_rate: 0.5
+                                }
+
+                            )
+
                         print(_loss)
-                        print(label[:, 2, :])
                         total_loss += loss
                         iteration = iteration + 1
                         average_loss = total_loss/iteration
                         print("average_loss is {}".format(average_loss))
                         writer.add_summary(summary, global_step=i)
-                        if iteration % 200 == 0:
+                        if iteration % 400 == 0:
                             saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                             self.validation(sess)
 
                     except tf.errors.OutOfRangeError:
-                        #saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
+                        saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                         break
-                continue
-                sess.run(self._test_iterator_initializer)
-                while True:
-                    try:
-
-                        feature, len, label = sess.run(test_next)
-                        predict = sess.run(
-                            self._predict, feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
-                         )
-                        res = sess.run(tf.argmax(predict, axis=2, output_type=tf.int64) - 2)
-                        self._data.feed_output(res)
-                    except tf.errors.OutOfRangeError:
-                        break
-
-                self._data.persist()
 
     def test(self):
         self.build()
@@ -249,13 +244,15 @@ class MoonLight(object):
             else:
                 print("no model!")
                 exit(0)
+            test_next = self._test_iterator.get_next()
             sess.run(self._test_iterator)
             while True:
                 try:
+                    feature, len, label = sess.run(test_next)
                     predict = sess.run(
-                        self._predict, feed_dict={self._keep_prob: 1.0}
+                        self._predict, feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
                     )
-                    res = sess.run(tf.argmax(predict, axis=2) - 2)
+                    res = sess.run(tf.argmax(predict, axis=2, output_type=tf.int64) - 2)
                     self._data.feed_output(res)
 
                 except tf.errors.OutOfRangeError:
