@@ -231,7 +231,6 @@ class MoonLight(object):
                         average_loss = total_loss/iteration
                         print("iteration is {}, average_loss is {}, cost time {} sec".format(iteration, average_loss, delta_t))
                         writer.add_summary(summary, global_step=iteration)
-                        self.validation(sess)
                         if iteration % 1000 == 0:
                             saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                             self.validation(sess)
