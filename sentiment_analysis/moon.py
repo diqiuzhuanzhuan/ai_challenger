@@ -166,12 +166,11 @@ class MoonLight(object):
             try:
                 delta_t = time.time()
                 feature, len, label = sess.run(self._validation_next)
-                predict, actual_batch_size = sess.run(
-                    [self._predict, self._actual_batch_size],
+                predict, actual_batch_size, lab, res = sess.run(
+                    [self._predict, self._actual_batch_size, tf.argmax(label, axis=2) - 2, tf.argmax(self._predict, axis=2) - 2],
                     feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
                 )
 
-                lab, res = sess.run([tf.argmax(label, axis=2) - 2, tf.argmax(predict, axis=2) - 2])
                 all_lab.extend(lab)
                 all_res.extend(res)
                 samples += actual_batch_size
