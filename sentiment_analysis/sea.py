@@ -19,10 +19,10 @@ import jieba
 
 class DataFiles:
     _train_file_names = ["./data/ai_challenger_sentiment_analysis_trainingset_20180816/sentiment_analysis_trainingset.csv"]
-    #_train_file_names = ["./data/ai_challenger_sentiment_analysis_trainingset_20180816/train.csv"]
+    _train_file_names = ["./data/ai_challenger_sentiment_analysis_trainingset_20180816/train.csv"]
     _train_file_url = ["http://www.diqiuzhuanzhuan.com/download/344/"]
     _validation_file_names = ["./data/ai_challenger_sentiment_analysis_validationset_20180816/sentiment_analysis_validationset.csv"]
-    #_validation_file_names = ["./data/ai_challenger_sentiment_analysis_validationset_20180816/train.csv"]
+    _validation_file_names = ["./data/ai_challenger_sentiment_analysis_validationset_20180816/train.csv"]
     _validation_file_url = ["http://www.diqiuzhuanzhuan.com/download/346/"]
     _test_file_names = ["./data/ai_challenger_sentiment_analysis_testa_20180816/sentiment_analysis_testa.csv"]
     _test_file_url = ["http://www.diqiuzhuanzhuan.com/download/334/"]
@@ -60,11 +60,10 @@ class DataFiles:
 
 class LookMan(object):
 
-    _box = set()
-    _table = {}
-    _num_oov = -1
-
     def __init__(self, dict_file, num_oov_buckets=1):
+        self._box = set()
+        self._table = {}
+        self._num_oov = -1
         self._num_oov = num_oov_buckets
         with open(dict_file, "r") as f:
             while True:
