@@ -8,12 +8,11 @@ email: diqiuzhuanzhuan@gmail.com
 import time
 
 import tensorflow as tf
-from tensorflow.contrib import *
 import os
 from sea import DataFiles, Data
 from sklearn.metrics import f1_score
 
-os.environ['CUDA_VISIBLE_DEVICES']='0, 1, 2'
+os.environ['CUDA_VISIBLE_DEVICES']='1'
 
 
 class MoonLight(object):
@@ -46,6 +45,7 @@ class MoonLight(object):
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
         self._learning_rate = tf.placeholder(name="learning_rate", dtype=tf.float32)
+        self._learning_rate = 0.8
         self._actual_batch_size = None
         self._data = Data(self._batch_size)
         self.weights = None
@@ -60,7 +60,7 @@ class MoonLight(object):
         self.weights = tf.constant(self._data.weights)
 
     def _create_embedding(self):
-        with tf.name_scope("create_embedding"):
+        with tf.device("/cpu:0"), tf.name_scope("create_embedding"):
             self._embedding_matrix = tf.get_variable(name="embedding_matrix", shape=[self._data.get_vocab_size(), self._embedding_dimension],
                                               initializer=tf.variance_scaling_initializer)
 
@@ -106,24 +106,6 @@ class MoonLight(object):
             self._predict = tf.one_hot(self._predict, depth=output_dimension, dtype=tf.int64)
             self._predict = tf.transpose(self._predict, [1, 0, 2])
 
-    def _create_metrics(self):
-        with tf.name_scope("create_metrics"):
-            pass
-            """
-            self._train_accuracy = tf.metrics.accuracy(tf.reshape(self._label, shape=[self._actual_batch_size, -1]), tf.reshape(self._predict, shape=[self._actual_batch_size, -1]), name="train_accuracy")
-            self._train_recall = tf.metrics.recall(tf.reshape(self._label, shape=[self._actual_batch_size, -1]), tf.reshape(self._predict, shape=[self._actual_batch_size, -1]), name="train_recall")
-            self._train_f1_score = 2 * self._train_accuracy[0] * self._train_recall[0] / (self._train_accuracy[0] + self._train_recall[0])
-            self._validation_accuracy = tf.metrics.accuracy(tf.reshape(self._label, shape=[self._actual_batch_size, -1]), tf.reshape(self._predict, shape=[self._actual_batch_size, -1]), name="validation_accuracy")
-            self._validation_recall = tf.metrics.recall(tf.reshape(self._label, shape=[self._actual_batch_size, -1]), tf.reshape(self._predict, shape=[self._actual_batch_size, -1]), name="validation_recall")
-            self._validation_f1_score = 2 * self._validation_accuracy[0] * self._validation_recall[0] / (self._validation_accuracy[0] + self._validation_recall[0])
-            print(self._next_element[2].get_shape())
-            next_element = tf.reshape(self._next_element[2], shape=[self._actual_batch_size, self._labels_num, -1])
-            self._train_accuracy = [tf.metrics.accuracy(name="train_acc"+str(i),labels=tf.reshape(next_element[:][i], shape=[self._actual_batch_size, -1]), predictions=tf.reshape(self._predict[:][i], shape=[self._actual_batch_size, -1])) for i in range(self._labels_num)]
-            self._train_recall = [tf.metrics.recall(name="train_recall"+str(i),labels=tf.reshape(next_element[:][i], shape=[self._actual_batch_size, -1]), predictions=tf.reshape(self._predict[:][i], shape=[self._actual_batch_size, -1])) for i in range(self._labels_num)]
-            self._train_f1_score = tf.stack([2 * self._train_accuracy[i][0] * self._train_recall[i][0] for i in range(self._labels_num)])
-            self._train_f1_score = tf.reduce_mean(self._train_f1_score, axis=0)
-            """
-
     def _create_loss(self):
         with tf.name_scope("create_loss"):
             length = self._labels_num
@@ -151,7 +133,6 @@ class MoonLight(object):
         self._create_embedding()
         self._create_bilstm()
         self._create_output()
-        self._create_metrics()
         self._create_loss()
         self._create_optimizer()
         self._create_summary()
@@ -211,17 +192,17 @@ class MoonLight(object):
                         delta_t = time.time()
                         feature, len, label = sess.run(train_next)
                         if iteration < 10000 or not max_loss_indice:
-                            _, loss, summary, _loss = sess.run(
-                                [self._optimizer, self._total_loss, self._summary_op, self._loss_],
+                            _, loss, summary, _loss, global_step = sess.run(
+                                [self._optimizer, self._total_loss, self._summary_op, self._loss_, self.global_step],
                                 feed_dict={
-                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label, self._learning_rate: 5.0
+                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
                                 }
                             )
                         else:
-                            _, loss, summary, _loss, max_loss_indice = sess.run(
-                                [self._all_optimizer[max_loss_indice], self._total_loss, self._summary_op, self._loss_, tf.argmax(self._loss, axis=0)],
+                            _, loss, summary, _loss, max_loss_indice, global_step = sess.run(
+                                [self._all_optimizer[max_loss_indice], self._total_loss, self._summary_op, self._loss_, tf.argmax(self._loss, axis=0), self.global_step],
                                 feed_dict={
-                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label, self._learning_rate: 0.8
+                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
                                 }
 
                             )
@@ -231,7 +212,7 @@ class MoonLight(object):
                         iteration = iteration + 1
                         average_loss = total_loss/iteration
                         print("iteration is {}, average_loss is {}, cost time {} sec".format(iteration, average_loss, delta_t))
-                        writer.add_summary(summary, global_step=iteration)
+                        writer.add_summary(summary, global_step=global_step)
                         if iteration % 1000 == 0:
                             saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                             self.validation(sess)
