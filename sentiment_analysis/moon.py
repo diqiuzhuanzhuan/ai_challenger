@@ -68,13 +68,13 @@ class MoonLight(object):
 
     def _create_bilstm(self):
 
-        def lstm_cell(lstm_unit):
-            cell = tf.nn.rnn_cell.GRUCell(num_units=lstm_unit)
-#            cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
-            cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, input_keep_prob=self._keep_prob)
-            return cell
-
         with tf.name_scope("create_bilstm"):
+            def lstm_cell(lstm_unit):
+                cell = tf.nn.rnn_cell.LSTMCell(num_units=lstm_unit)
+#            cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
+                cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, input_keep_prob=self._keep_prob)
+                return cell
+
             stack_fw_lstm = tf.nn.rnn_cell.MultiRNNCell([lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)])
             initial_state_fw = stack_fw_lstm.zero_state(tf.to_int32(self._actual_batch_size), tf.float32)
             stack_bw_lstm = tf.nn.rnn_cell.MultiRNNCell([lstm_cell(lstm_unit=self._lstm_unit) for _ in range(self._lstm_layers)])
@@ -109,7 +109,7 @@ class MoonLight(object):
     def _create_loss(self):
         with tf.name_scope("create_loss"):
             length = self._labels_num
-            w = [tf.nn.embedding_lookup(self.weights[i], tf.argmax(self._label[:, i, :], axis=1)) for i in range(length)]
+            w = [tf.nn.embedding_lookup(self.weights[i], tf.argmax(self._label[:, i, :], axis=1), name="embedding_lookup"+str(i)) for i in range(length)]
             self._loss_ = [tf.losses.softmax_cross_entropy(onehot_labels=self._label[:, i, :], logits=self._logits[i], weights=w[i]) for i in range(length)]
             self._loss = tf.stack(self._loss_)
             self._total_loss = tf.reduce_mean(self._loss, axis=0)
@@ -173,11 +173,12 @@ class MoonLight(object):
         self.build()
         saver = tf.train.Saver()
         with tf.Session() as sess:
-            sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:
                 print("正在从{}加载模型".format(ckpt.model_checkpoint_path))
                 saver.restore(sess, ckpt.model_checkpoint_path)
+            else:
+                sess.run(tf.global_variables_initializer())
             writer = tf.summary.FileWriter('graphs/ai_challenger/learning_rate' + str(self._learning_rate), self.graph)
             initial_step = self.global_step.eval()
             print("initial_step is {}".format(initial_step))
@@ -185,6 +186,7 @@ class MoonLight(object):
             iteration = 0
             train_next = self._train_iterator.get_next()
             max_loss_indice = None
+            total_time = 0
             for i in range(initial_step, initial_step+epoches):
                 sess.run(self._train_iterator_initializer, feed_dict={self._batch_size: 32})
                 while True:
@@ -206,14 +208,13 @@ class MoonLight(object):
                                 }
 
                             )
-                        delta_t = time.time() - delta_t
-                        print(_loss)
                         total_loss += loss
                         iteration = iteration + 1
                         average_loss = total_loss/iteration
-                        print("iteration is {}, average_loss is {}, cost time {} sec".format(iteration, average_loss, delta_t))
                         writer.add_summary(summary, global_step=global_step)
-                        if iteration % 1000 == 0:
+                        total_time += time.time() - delta_t
+                        print("iteration is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, average_loss, total_time, total_time/iteration))
+                        if iteration % 10 == 0:
                             saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                             self.validation(sess)
 
@@ -225,7 +226,6 @@ class MoonLight(object):
         self.build()
         saver = tf.train.Saver()
         with tf.Session() as sess:
-            sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:
                 saver.restore(sess, ckpt.model_checkpoint_path)
