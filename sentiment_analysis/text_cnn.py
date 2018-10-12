@@ -8,10 +8,11 @@ email: diqiuzhuanzhuan@gmail.com
 
 import tensorflow as tf
 import numpy as np
-from sea import DataFiles, Data
+from sea import DataFiles, Data, Config
 import time
 import os
 from sklearn.metrics import f1_score
+os.environ['CUDA_VISIBLE_DEVICES']='1'
 
 
 class TextCNN(object):
@@ -39,7 +40,7 @@ class TextCNN(object):
 
         self._labels_num = 20
         self._output_dimension = 4
-        self._learning_rate = 0.001
+        self._learning_rate = 0.01
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self.graph = tf.Graph()
 
@@ -203,7 +204,7 @@ class TextCNN(object):
             max_loss_indice = None
             total_time = 0
             for i in range(initial_step, initial_step + epoches):
-                sess.run(self._train_iterator_initializer, feed_dict={self._batch_size: 32})
+                sess.run(self._train_iterator_initializer, feed_dict={self._batch_size: 256})
                 while True:
                     try:
                         delta_t = time.time()
@@ -229,10 +230,11 @@ class TextCNN(object):
                         writer.add_summary(summary, global_step=global_step)
                         total_time += time.time() - delta_t
                         print("iteration is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, average_loss, total_time, total_time / iteration))
+
                         if iteration % 1000 == 0:
                             saver.save(sess, save_path="checkpoint/text_cnn", global_step=self.global_step)
                             self.validation(sess)
-                        if global_step % 30000 == 0:
+                        if (global_step + 1) % 30000 == 0:
                             self._test(sess, global_step)
 
                     except tf.errors.OutOfRangeError:
@@ -281,6 +283,7 @@ class TextCNN(object):
 
 
 if __name__ == "__main__":
+    Config._use_lemma = False
     model = TextCNN(sequence_length=2000, filter_sizes=[3, 4, 5], num_filters=128)
     model.build()
     model.train(300)
