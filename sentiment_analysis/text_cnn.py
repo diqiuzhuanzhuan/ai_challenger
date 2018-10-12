@@ -120,8 +120,8 @@ class TextCNN(object):
             self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate)
             self._grads_total = self._optimizer.compute_gradients(self._total_loss)
             self._grads_distribution = [self._optimizer.compute_gradients(self._loss_[i]) for i in range(self._labels_num)]
-            self._train_total = self._optimizer.apply_gradients(self._grads_total)
-            self._train_distribution = [self._optimizer.apply_gradients(self._grads_distribution[i]) for i in range(self._labels_num)]
+            self._train_total = self._optimizer.apply_gradients(self._grads_total, global_step=self.global_step)
+            self._train_distribution = [self._optimizer.apply_gradients(self._grads_distribution[i], global_step=self.global_step) for i in range(self._labels_num)]
 
     def _create_summary(self):
         with tf.name_scope("create_summary"):
@@ -239,6 +239,7 @@ class TextCNN(object):
 
                     except tf.errors.OutOfRangeError:
                         saver.save(sess, save_path="checkpoint/text_cnn", global_step=self.global_step)
+                        break
 
     def _test(self, sess, global_step):
         test_next = self._test_iterator.get_next()
@@ -284,6 +285,6 @@ class TextCNN(object):
 
 if __name__ == "__main__":
     Config._use_lemma = False
-    model = TextCNN(sequence_length=2000, filter_sizes=[3, 4, 5], num_filters=128)
+    model = TextCNN(sequence_length=3000, filter_sizes=[3, 4, 5], num_filters=128)
     model.build()
     model.train(300)
