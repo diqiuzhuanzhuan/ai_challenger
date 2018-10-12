@@ -116,8 +116,8 @@ class MoonLight(object):
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
-            self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate).minimize(self._loss, global_step=self.global_step)
-#            self._optimizer = tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._loss, global_step=self.global_step)
+            #self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate).minimize(self._loss, global_step=self.global_step)
+            self._optimizer = tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._loss, global_step=self.global_step)
             self._all_optimizer = [tf.train.AdamOptimizer(learning_rate=self._learning_rate).minimize(self._loss_[i], global_step=self.global_step) for i in range(self._labels_num)]
 
     def _create_summary(self):

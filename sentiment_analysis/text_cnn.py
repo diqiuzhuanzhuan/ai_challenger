@@ -21,21 +21,19 @@ class TextCNN(object):
     """
 
     def __init__(
-            self, sequence_length, num_classes, vocab_size,
-            embedding_size, filter_sizes, num_filters, l2_reg_lambda=0.0):
+            self, sequence_length, filter_sizes, num_filters, l2_reg_lambda=0.0, embedding_size=256):
 
         self._embedding_size = embedding_size
-        self._vocab_size = vocab_size
         self._batch_size = tf.placeholder(dtype=tf.int64, name="batch_size")
         # Placeholders for input, output and dropout
-        self._feature = tf.placeholder(tf.int32, [None, sequence_length], name="feature")
-        self._label = tf.placeholder(tf.float32, [None, num_classes], name="label")
+        self._feature = tf.placeholder(tf.int64, [None, sequence_length], name="feature")
+        self._label = tf.placeholder(dtype=tf.int64, shape=[None, None, None], name="label")
+        self._feature_length = tf.placeholder(dtype=tf.int64, shape=[None, None], name="feature_length")
         self._keep_prob = tf.placeholder(tf.float32, name="keep_prob")
-        self._data = Data(self._batch_size)
         self._num_filters = num_filters
         self._sequence_length = sequence_length
+        self._data = Data(self._batch_size, max_length=self._sequence_length)
         self._filter_sizes = filter_sizes
-        self._num_classes = num_classes
         self._l2_reg_lambda = l2_reg_lambda
         self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)
 
@@ -43,6 +41,7 @@ class TextCNN(object):
         self._output_dimension = 4
         self._learning_rate = 0.001
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
+        self.graph = tf.Graph()
 
     def _load_data(self):
         self._train_iterator, self._train_iterator_initializer, self._validation_iterator, self._validation_iterator_initializer, self._test_iterator, self._test_iterator_initializer \
@@ -55,7 +54,7 @@ class TextCNN(object):
         # Embedding layer
         with tf.device('/cpu:0'), tf.name_scope("embedding"):
             self.W = tf.Variable(
-                tf.random_uniform([self._vocab_size, self._embedding_size], -1.0, 1.0),
+                tf.random_uniform([self._data.get_vocab_size(), self._embedding_size], -1.0, 1.0),
                 name="W")
             self.embedded_chars = tf.nn.embedding_lookup(self.W, self._feature)
             self.embedded_chars_expanded = tf.expand_dims(self.embedded_chars, -1)
@@ -93,17 +92,6 @@ class TextCNN(object):
 
     def _create_output(self):
         with tf.name_scope("output"):
-            num_filters_total = self._num_filters * len(self._filter_sizes)
-            l2_loss = tf.constant(0.0)
-            W = tf.get_variable(
-                "W",
-                shape=[num_filters_total, self._num_classes],
-                initializer=tf.contrib.layers.xavier_initializer())
-            b = tf.Variable(tf.constant(0.1, shape=[self._num_classes]), name="b")
-            l2_loss += tf.nn.l2_loss(W)
-            l2_loss += tf.nn.l2_loss(b)
-            self._l2_loss = l2_loss
-
             self._input = tf.layers.dense(inputs=self.h_drop, units=256, kernel_initializer=tf.truncated_normal_initializer, activation=tf.nn.sigmoid)
             self._logits = [
                 tf.layers.dense(inputs=self._input, units=128, kernel_initializer=tf.truncated_normal_initializer(seed=i, stddev=0.01, mean=0), activation=tf.nn.relu)
@@ -124,7 +112,7 @@ class TextCNN(object):
             w = [tf.nn.embedding_lookup(self.weights[i], tf.argmax(self._label[:, i, :], axis=1), name="embedding_lookup" + str(i)) for i in range(length)]
             self._loss_ = [tf.losses.softmax_cross_entropy(onehot_labels=self._label[:, i, :], logits=self._logits[i], weights=w[i]) for i in range(length)]
             self._loss = tf.stack(self._loss_)
-            self._total_loss = tf.reduce_mean(self._loss, axis=0) + self._l2_loss
+            self._total_loss = tf.reduce_mean(self._loss, axis=0)
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
@@ -206,7 +194,7 @@ class TextCNN(object):
                 saver.restore(sess, ckpt.model_checkpoint_path)
             else:
                 sess.run(tf.global_variables_initializer())
-            writer = tf.summary.FileWriter('graphs/ai_challenger/learning_rate' + str(self._learning_rate), self.graph)
+            writer = tf.summary.FileWriter('graphs/ai_challenger/text_cnn/learning_rate' + str(self._learning_rate), self.graph)
             initial_step = self.global_step.eval()
             print("initial_step is {}".format(initial_step))
             total_loss = 0.0
@@ -222,14 +210,14 @@ class TextCNN(object):
                         feature, len, label = sess.run(train_next)
                         if iteration < 10000 or not max_loss_indice:
                             _, loss, summary, _loss, global_step = sess.run(
-                                [self._optimizer, self._total_loss, self._summary_op, self._loss_, self.global_step],
+                                [self._train_total, self._total_loss, self._summary_op, self._loss_, self.global_step],
                                 feed_dict={
                                     self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
                                 }
                             )
                         else:
                             _, loss, summary, _loss, max_loss_indice, global_step = sess.run(
-                                [self._all_optimizer[max_loss_indice], self._total_loss, self._summary_op, self._loss_, tf.argmax(self._loss, axis=0), self.global_step],
+                                [self._train_distribution[max_loss_indice], self._total_loss, self._summary_op, self._loss_, tf.argmax(self._loss, axis=0), self.global_step],
                                 feed_dict={
                                     self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
                                 }
@@ -242,13 +230,13 @@ class TextCNN(object):
                         total_time += time.time() - delta_t
                         print("iteration is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, average_loss, total_time, total_time / iteration))
                         if iteration % 1000 == 0:
-                            saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
+                            saver.save(sess, save_path="checkpoint/text_cnn", global_step=self.global_step)
                             self.validation(sess)
-                        if global_step % 1 == 0:
+                        if global_step % 30000 == 0:
                             self._test(sess, global_step)
 
                     except tf.errors.OutOfRangeError:
-                        saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
+                        saver.save(sess, save_path="checkpoint/text_cnn", global_step=self.global_step)
 
     def _test(self, sess, global_step):
         test_next = self._test_iterator.get_next()
@@ -291,3 +279,8 @@ class TextCNN(object):
                     break
             self._data.persist()
 
+
+if __name__ == "__main__":
+    model = TextCNN(sequence_length=2000, filter_sizes=[3, 4, 5], num_filters=128)
+    model.build()
+    model.train(300)
