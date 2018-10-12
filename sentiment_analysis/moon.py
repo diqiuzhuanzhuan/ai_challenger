@@ -35,7 +35,7 @@ class MoonLight(object):
     _labels_num = 20
     _output_dimension = 4
 
-    def __init__(self, embedding_dimension=256):
+    def __init__(self, learning_rate=0.8, embedding_dimension=256):
         self._embedding_dimension = embedding_dimension
         self._keep_prob = tf.placeholder(dtype=tf.float32, name="keep_prob")
         self._feature = tf.placeholder(dtype=tf.int64, shape=[None, None], name="feature")
@@ -45,7 +45,7 @@ class MoonLight(object):
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
         self._learning_rate = tf.placeholder(name="learning_rate", dtype=tf.float32)
-        self._learning_rate = 0.8
+        self._learning_rate = learning_rate
         self._actual_batch_size = None
         self._data = Data(self._batch_size)
         self.weights = None
@@ -171,7 +171,7 @@ class MoonLight(object):
             os.mkdir("checkpoint")
 
         self.build()
-        saver = tf.train.Saver()
+        saver = tf.train.Saver(sharded=True)
         with tf.Session() as sess:
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:
@@ -217,14 +217,31 @@ class MoonLight(object):
                         if iteration % 1000 == 0:
                             saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                             self.validation(sess)
+                        if global_step % 30000 == 0:
+                            self._test(sess, global_step)
 
                     except tf.errors.OutOfRangeError:
                         saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
-                        break
+
+    def _test(self, sess, global_step):
+        test_next = self._test_iterator.get_next()
+        sess.run(self._test_iterator_initializer, feed_dict={self._batch_size: 256})
+        while True:
+            try:
+                feature, len, label = sess.run(test_next)
+                res = sess.run(
+                    tf.argmax(self._predict, axis=2, output_type=tf.int64)-2,
+                    feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
+                )
+                self._data.feed_output(res)
+
+            except tf.errors.OutOfRangeError:
+                break
+        self._data.persist("result_{}.csv".format(global_step))
 
     def test(self):
         self.build()
-        saver = tf.train.Saver()
+        saver = tf.train.Saver(sharded=True)
         with tf.Session() as sess:
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:

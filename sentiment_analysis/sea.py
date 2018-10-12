@@ -304,6 +304,7 @@ class Data(object):
         columns = self._will_output.columns
         self._will_output[columns[2:]] = self._will_output[columns[2:]].astype(int)
         self._will_output.to_csv(filename, index=False, encoding="utf_8_sig")
+        self._output_cursor = 0
 
     def calc_weight(self):
         self.load_data()
