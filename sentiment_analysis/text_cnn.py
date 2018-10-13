@@ -7,7 +7,6 @@ email: diqiuzhuanzhuan@gmail.com
 """
 
 import tensorflow as tf
-import numpy as np
 from sea import DataFiles, Data, Config
 import time
 import os
@@ -22,7 +21,7 @@ class TextCNN(object):
     """
 
     def __init__(
-            self, sequence_length, filter_sizes, num_filters, l2_reg_lambda=0.0, embedding_size=256):
+            self, sequence_length, filter_sizes, num_filters, batch_size=128, l2_reg_lambda=0.0, embedding_size=256):
 
         self._embedding_size = embedding_size
         self._batch_size = tf.placeholder(dtype=tf.int64, name="batch_size")
@@ -33,6 +32,7 @@ class TextCNN(object):
         self._keep_prob = tf.placeholder(tf.float32, name="keep_prob")
         self._num_filters = num_filters
         self._sequence_length = sequence_length
+        self._batch_size = batch_size
         self._data = Data(self._batch_size, max_length=self._sequence_length)
         self._filter_sizes = filter_sizes
         self._l2_reg_lambda = l2_reg_lambda
@@ -40,7 +40,7 @@ class TextCNN(object):
 
         self._labels_num = 20
         self._output_dimension = 4
-        self._learning_rate = 0.01
+        self._learning_rate = 0.001
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self.graph = tf.Graph()
 
@@ -90,16 +90,17 @@ class TextCNN(object):
         self.h_pool = tf.concat(pooled_outputs, 3)
         self.h_pool_flat = tf.reshape(self.h_pool, [-1, num_filters_total])
         self.h_drop = tf.nn.dropout(self.h_pool_flat, self._keep_prob)
+        print(self.h_drop.get_shape())
 
     def _create_output(self):
         with tf.name_scope("output"):
             self._input = tf.layers.dense(inputs=self.h_drop, units=256, kernel_initializer=tf.truncated_normal_initializer, activation=tf.nn.sigmoid)
             self._logits = [
-                tf.layers.dense(inputs=self._input, units=128, kernel_initializer=tf.truncated_normal_initializer(seed=i, stddev=0.01, mean=0), activation=tf.nn.relu)
+                tf.layers.dense(inputs=self._input, units=128, kernel_initializer=tf.truncated_normal_initializer(seed=i, stddev=0.01, mean=0), activation=tf.nn.sigmoid)
                 for i in range(self._labels_num)
             ]
             self._logits = [
-                tf.layers.dense(inputs=self._logits[i], units=self._output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i * 10, stddev=0.01, mean=0), activation=tf.nn.relu)
+                tf.layers.dense(inputs=self._logits[i], units=self._output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i * 10, stddev=0.01, mean=0), activation=tf.nn.sigmoid)
                 for i in range(self._labels_num)
             ]
             self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i], name="softmax" + str(i)) for i in range(self._labels_num)])
@@ -133,8 +134,6 @@ class TextCNN(object):
                     grad_summaries.append(grad_hist_summary)
                     grad_summaries.append(sparsity_summary)
 
-            tf.summary.merge(grad_summaries)
-
             tf.summary.scalar('loss', self._total_loss)
             [tf.summary.scalar('loss [' + str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
             [tf.summary.histogram('histogram loss[' + str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
@@ -156,7 +155,7 @@ class TextCNN(object):
     def validation(self, sess):
         f1 = 0
         samples = 0
-        sess.run(self._validation_iterator_initializer, feed_dict={self._batch_size: 512})
+        sess.run(self._validation_iterator_initializer)
         all_lab = []
         all_res = []
         print("对验证集进行验证....")
@@ -186,7 +185,6 @@ class TextCNN(object):
         if not os.path.exists("checkpoint"):
             os.mkdir("checkpoint")
 
-        self.build()
         saver = tf.train.Saver(sharded=True)
         with tf.Session() as sess:
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
@@ -204,7 +202,7 @@ class TextCNN(object):
             max_loss_indice = None
             total_time = 0
             for i in range(initial_step, initial_step + epoches):
-                sess.run(self._train_iterator_initializer, feed_dict={self._batch_size: 256})
+                sess.run(self._train_iterator_initializer)
                 while True:
                     try:
                         delta_t = time.time()
@@ -243,7 +241,7 @@ class TextCNN(object):
 
     def _test(self, sess, global_step):
         test_next = self._test_iterator.get_next()
-        sess.run(self._test_iterator_initializer, feed_dict={self._batch_size: 256})
+        sess.run(self._test_iterator_initializer, feed_dict={})
         while True:
             try:
                 feature, len, label = sess.run(test_next)
@@ -268,7 +266,7 @@ class TextCNN(object):
                 print("no model!")
                 exit(0)
             test_next = self._test_iterator.get_next()
-            sess.run(self._test_iterator_initializer, feed_dict={self._batch_size: 256})
+            sess.run(self._test_iterator_initializer, feed_dict={})
             while True:
                 try:
                     feature, len, label = sess.run(test_next)
@@ -285,6 +283,6 @@ class TextCNN(object):
 
 if __name__ == "__main__":
     Config._use_lemma = False
-    model = TextCNN(sequence_length=3000, filter_sizes=[3, 4, 5], num_filters=128)
+    model = TextCNN(sequence_length=3000, filter_sizes=[3, 4, 5, 6], num_filters=256)
     model.build()
     model.train(300)
