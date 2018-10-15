@@ -37,12 +37,14 @@ class TextCNN(object):
         self._filter_sizes = filter_sizes
         self._l2_reg_lambda = l2_reg_lambda
         self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)
+        self._batch_normalization_trainable = tf.placeholder(tf.bool, name="batch_normalization_trainable")
 
         self._labels_num = 20
         self._output_dimension = 4
-        self._learning_rate = 0.001
+        self._learning_rate = 1e-4
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self.graph = tf.Graph()
+
 
     def _load_data(self):
         self._train_iterator, self._train_iterator_initializer, self._validation_iterator, self._validation_iterator_initializer, self._test_iterator, self._test_iterator_initializer \
@@ -75,6 +77,7 @@ class TextCNN(object):
                     padding="VALID",
                     name="conv")
                 # Apply nonlinearity
+                #h1 = tf.layers.batch_normalization(tf.nn.bias_add(conv, b), training=)
                 h = tf.nn.relu(tf.nn.bias_add(conv, b), name="relu")
                 # Maxpooling over the outputs
                 pooled = tf.nn.max_pool(
@@ -90,20 +93,22 @@ class TextCNN(object):
         self.h_pool = tf.concat(pooled_outputs, 3)
         self.h_pool_flat = tf.reshape(self.h_pool, [-1, num_filters_total])
         self.h_drop = tf.nn.dropout(self.h_pool_flat, self._keep_prob)
-        print(self.h_drop.get_shape())
 
     def _create_output(self):
         with tf.name_scope("output"):
-            self._input = tf.layers.dense(inputs=self.h_drop, units=256, kernel_initializer=tf.truncated_normal_initializer, activation=tf.nn.sigmoid)
+            self._input = tf.layers.dense(inputs=self.h_drop, units=256, kernel_initializer=tf.truncated_normal_initializer(stddev=0.1), activation=tf.nn.relu)
+            self._input = self.h_drop
             self._logits = [
-                tf.layers.dense(inputs=self._input, units=128, kernel_initializer=tf.truncated_normal_initializer(seed=i, stddev=0.01, mean=0), activation=tf.nn.sigmoid)
+                tf.layers.dense(inputs=self._input, units=128, kernel_initializer=tf.truncated_normal_initializer(seed=i, stddev=0.1), activation=tf.nn.relu)
                 for i in range(self._labels_num)
             ]
+
             self._logits = [
-                tf.layers.dense(inputs=self._logits[i], units=self._output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i * 10, stddev=0.01, mean=0), activation=tf.nn.sigmoid)
+                tf.layers.dense(inputs=self._logits[i], units=self._output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i * 10, stddev=0.1), activation=tf.nn.sigmoid)
                 for i in range(self._labels_num)
             ]
-            self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i], name="softmax" + str(i)) for i in range(self._labels_num)])
+            #self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i], name="softmax" + str(i)) for i in range(self._labels_num)])
+            self._predict = tf.stack([self._logits[i] for i in range(self._labels_num)])
             self._predict = tf.argmax(self._predict, axis=2)
             self._predict = tf.one_hot(self._predict, depth=self._output_dimension, dtype=tf.int64)
             self._predict = tf.transpose(self._predict, [1, 0, 2])
@@ -118,7 +123,8 @@ class TextCNN(object):
 
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
-            self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate)
+            #self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate)
+            self._optimizer = tf.train.AdadeltaOptimizer(learning_rate=self._learning_rate)
             self._grads_total = self._optimizer.compute_gradients(self._total_loss)
             self._grads_distribution = [self._optimizer.compute_gradients(self._loss_[i]) for i in range(self._labels_num)]
             self._train_total = self._optimizer.apply_gradients(self._grads_total, global_step=self.global_step)
@@ -207,16 +213,16 @@ class TextCNN(object):
                     try:
                         delta_t = time.time()
                         feature, len, label = sess.run(train_next)
-                        if iteration < 10000 or not max_loss_indice:
-                            _, loss, summary, _loss, global_step = sess.run(
-                                [self._train_total, self._total_loss, self._summary_op, self._loss_, self.global_step],
+                        if iteration < 20000 or not max_loss_indice:
+                            _, loss, summary, global_step = sess.run(
+                                [self._train_total, self._total_loss, self._summary_op, self.global_step],
                                 feed_dict={
                                     self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
                                 }
                             )
                         else:
-                            _, loss, summary, _loss, max_loss_indice, global_step = sess.run(
-                                [self._train_distribution[max_loss_indice], self._total_loss, self._summary_op, self._loss_, tf.argmax(self._loss, axis=0), self.global_step],
+                            _, loss, summary, max_loss_indice, global_step = sess.run(
+                                [self._train_distribution[max_loss_indice], self._total_loss, self._summary_op, tf.argmax(self._loss, axis=0), self.global_step],
                                 feed_dict={
                                     self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
                                 }
@@ -283,6 +289,6 @@ class TextCNN(object):
 
 if __name__ == "__main__":
     Config._use_lemma = False
-    model = TextCNN(sequence_length=3000, filter_sizes=[3, 4, 5, 6], num_filters=256)
+    model = TextCNN(sequence_length=3000, filter_sizes=[3, 4, 5], num_filters=256)
     model.build()
     model.train(300)
