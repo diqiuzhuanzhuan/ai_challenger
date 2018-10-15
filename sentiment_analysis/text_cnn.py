@@ -190,7 +190,7 @@ class TextCNN(object):
                 for l1, l2 in zip(all_res, all_lab):
                     f1 += f1_score(l2, l1, average="macro")
                 average_f1 = f1 / samples
-                print("验证集运行完毕，平均f1为: {} \n average_loss is {}, 总耗时为{}秒".format(average_f1, total_loss / iteration), total_time)
+                print("验证集运行完毕，平均f1为: {} \n average_loss is {}, 总耗时为{}秒".format(average_f1, total_loss / iteration, total_time))
                 break
 
     def train(self, epoches=10):
