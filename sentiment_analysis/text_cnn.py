@@ -41,7 +41,7 @@ class TextCNN(object):
 
         self._labels_num = 20
         self._output_dimension = 4
-        self._learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 3000, 0.96, staircase=True)
+        self._learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 1000, 0.96, staircase=True)
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self.graph = tf.Graph()
 

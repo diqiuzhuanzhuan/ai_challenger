@@ -9,7 +9,7 @@ import time
 
 import tensorflow as tf
 import os
-from sea import DataFiles, Data
+from sea import DataFiles, Data, Config
 from sklearn.metrics import f1_score
 
 os.environ['CUDA_VISIBLE_DEVICES']='1'
@@ -46,6 +46,7 @@ class MoonLight(object):
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
         self._learning_rate = tf.placeholder(name="learning_rate", dtype=tf.float32)
         self._learning_rate = learning_rate
+        self._learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 1000, 0.96, staircase=True)
         self._actual_batch_size = None
         self._data = Data(self._batch_size)
         self.weights = None
@@ -91,17 +92,17 @@ class MoonLight(object):
             output_dimension = self._output_dimension
             indices = tf.stack([tf.range(self._actual_batch_size, dtype=tf.int32), tf.to_int32(tf.reshape(self._feature_length-1, [-1]))], axis=1)
             self._input = tf.gather_nd(self._sentence_encoder_output, indices)
-            self._input = tf.layers.dense(inputs=self._input, units=256, kernel_initializer=tf.truncated_normal_initializer, activation=tf.nn.sigmoid)
+            self._input = tf.layers.dense(inputs=self._input, units=256, kernel_initializer=tf.truncated_normal_initializer(stddev=0.1), activation=tf.nn.relu)
 
             self._logits = [
-                tf.layers.dense(inputs=self._input, units=128, kernel_initializer=tf.truncated_normal_initializer(seed=i, stddev=0.01, mean=0), activation=tf.nn.sigmoid)
+                tf.layers.dense(inputs=self._input, units=128, kernel_initializer=tf.truncated_normal_initializer(seed=i, stddev=0.1), activation=tf.nn.relu)
                 for i in range(length)
             ]
             self._logits = [
                 tf.layers.dense(inputs=self._logits[i], units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i*10, stddev=0.01, mean=0), activation=tf.nn.sigmoid)
                 for i in range(length)
             ]
-            self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i], name="softmax"+str(i)) for i in range(length)])
+            self._predict = tf.stack(self._logits)
             self._predict = tf.argmax(self._predict, axis=2)
             self._predict = tf.one_hot(self._predict, depth=output_dimension, dtype=tf.int64)
             self._predict = tf.transpose(self._predict, [1, 0, 2])
@@ -117,8 +118,11 @@ class MoonLight(object):
     def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
             #self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate).minimize(self._loss, global_step=self.global_step)
-            self._optimizer = tf.train.AdagradOptimizer(learning_rate=self._learning_rate).minimize(self._loss, global_step=self.global_step)
-            self._all_optimizer = [tf.train.AdamOptimizer(learning_rate=self._learning_rate).minimize(self._loss_[i], global_step=self.global_step) for i in range(self._labels_num)]
+            self._optimizer = tf.train.AdadeltaOptimizer(learning_rate=self._learning_rate)
+            self._grads_total = self._optimizer.compute_gradients(self._loss)
+            self._grads_distribution = [self._optimizer.compute_gradients(self._loss_[i]) for i in range(self._labels_num)]
+            self._train_total = self._optimizer.apply_gradients(self._grads_total, global_step=self.global_step)
+            self._train_distribution = [self._optimizer.apply_gradients(self._grads_distribution[i], global_step=self.global_step) for i in range(self._labels_num)]
 
     def _create_summary(self):
         with tf.name_scope("summary"):
@@ -186,6 +190,7 @@ class MoonLight(object):
             iteration = 0
             train_next = self._train_iterator.get_next()
             max_loss_indice = None
+            global_step = initial_step
             total_time = 0
             for i in range(initial_step, initial_step+epoches):
                 sess.run(self._train_iterator_initializer, feed_dict={self._batch_size: 32})
@@ -193,18 +198,18 @@ class MoonLight(object):
                     try:
                         delta_t = time.time()
                         feature, len, label = sess.run(train_next)
-                        if iteration < 10000 or not max_loss_indice:
-                            _, loss, summary, _loss, global_step = sess.run(
-                                [self._optimizer, self._total_loss, self._summary_op, self._loss_, self.global_step],
+                        if global_step < 10000 or not max_loss_indice:
+                            _, loss, summary, global_step = sess.run(
+                                [self._train_total, self._total_loss, self._summary_op, self.global_step],
                                 feed_dict={
-                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
+                                    self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label
                                 }
                             )
                         else:
-                            _, loss, summary, _loss, max_loss_indice, global_step = sess.run(
-                                [self._all_optimizer[max_loss_indice], self._total_loss, self._summary_op, self._loss_, tf.argmax(self._loss, axis=0), self.global_step],
+                            _, _, loss, summary, max_loss_indice, global_step = sess.run(
+                                [self._train_distribution[max_loss_indice], self._train_total, self._total_loss, self._summary_op, tf.argmax(self._loss, axis=0), self.global_step],
                                 feed_dict={
-                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
+                                    self._keep_prob: 0.7, self._feature: feature, self._feature_length: len, self._label: label
                                 }
 
                             )
@@ -213,7 +218,7 @@ class MoonLight(object):
                         average_loss = total_loss/iteration
                         writer.add_summary(summary, global_step=global_step)
                         total_time += time.time() - delta_t
-                        print("iteration is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, average_loss, total_time, total_time/iteration))
+                        print("iteration is {}, current_loss is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, loss, average_loss, total_time, total_time/iteration))
                         if iteration % 1000 == 0:
                             saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
                             self.validation(sess)
@@ -222,6 +227,7 @@ class MoonLight(object):
 
                     except tf.errors.OutOfRangeError:
                         saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
+                        break
 
     def _test(self, sess, global_step):
         test_next = self._test_iterator.get_next()
@@ -266,5 +272,6 @@ class MoonLight(object):
 
 
 if __name__ == "__main__":
+    Config._use_lemma = False
     ml = MoonLight()
     ml.train(50000)
