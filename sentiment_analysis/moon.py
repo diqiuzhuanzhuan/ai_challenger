@@ -99,7 +99,7 @@ class MoonLight(object):
                 for i in range(length)
             ]
             self._logits = [
-                tf.layers.dense(inputs=self._logits[i], units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i*10, stddev=0.01, mean=0), activation=tf.nn.sigmoid)
+                tf.layers.dense(inputs=self._logits[i], units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i*10, stddev=0.01, mean=0), activation=None)
                 for i in range(length)
             ]
             self._predict = tf.stack(self._logits)
