@@ -41,7 +41,7 @@ class TextCNN(object):
 
         self._labels_num = 20
         self._output_dimension = 4
-        self._learning_rate = 1e-4
+        self._learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 3000, 0.96, staircase=True)
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self.graph = tf.Graph()
 
@@ -97,7 +97,6 @@ class TextCNN(object):
     def _create_output(self):
         with tf.name_scope("output"):
             self._input = tf.layers.dense(inputs=self.h_drop, units=256, kernel_initializer=tf.truncated_normal_initializer(stddev=0.1), activation=tf.nn.relu)
-            self._input = self.h_drop
             self._logits = [
                 tf.layers.dense(inputs=self._input, units=128, kernel_initializer=tf.truncated_normal_initializer(seed=i, stddev=0.1), activation=tf.nn.relu)
                 for i in range(self._labels_num)
@@ -221,8 +220,8 @@ class TextCNN(object):
                                 }
                             )
                         else:
-                            _, loss, summary, max_loss_indice, global_step = sess.run(
-                                [self._train_distribution[max_loss_indice], self._total_loss, self._summary_op, tf.argmax(self._loss, axis=0), self.global_step],
+                            _, _, loss, summary, max_loss_indice, global_step = sess.run(
+                                [self._train_distribution[max_loss_indice], self._train_total, self._total_loss, self._summary_op, tf.argmax(self._loss, axis=0), self.global_step],
                                 feed_dict={
                                     self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
                                 }
