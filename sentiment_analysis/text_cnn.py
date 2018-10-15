@@ -139,6 +139,7 @@ class TextCNN(object):
                     grad_summaries.append(grad_hist_summary)
                     grad_summaries.append(sparsity_summary)
 
+            tf.summary.scalar('learning_rate', self._learning_rate)
             tf.summary.scalar('loss', self._total_loss)
             [tf.summary.scalar('loss [' + str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
             [tf.summary.histogram('histogram loss[' + str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
