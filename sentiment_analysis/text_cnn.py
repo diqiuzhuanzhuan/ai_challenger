@@ -45,7 +45,6 @@ class TextCNN(object):
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self.graph = tf.Graph()
 
-
     def _load_data(self):
         self._train_iterator, self._train_iterator_initializer, self._validation_iterator, self._validation_iterator_initializer, self._test_iterator, self._test_iterator_initializer \
             = self._data.load_data()
@@ -103,7 +102,7 @@ class TextCNN(object):
             ]
 
             self._logits = [
-                tf.layers.dense(inputs=self._logits[i], units=self._output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i * 10, stddev=0.1), activation=tf.nn.sigmoid)
+                tf.layers.dense(inputs=self._logits[i], units=self._output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i * 10, stddev=0.1), activation=None)
                 for i in range(self._labels_num)
             ]
             #self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i], name="softmax" + str(i)) for i in range(self._labels_num)])
@@ -217,7 +216,7 @@ class TextCNN(object):
                             _, loss, summary, global_step = sess.run(
                                 [self._train_total, self._total_loss, self._summary_op, self.global_step],
                                 feed_dict={
-                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
+                                    self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label
                                 }
                             )
                         else:
@@ -233,7 +232,7 @@ class TextCNN(object):
                         average_loss = total_loss / iteration
                         writer.add_summary(summary, global_step=global_step)
                         total_time += time.time() - delta_t
-                        print("iteration is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, average_loss, total_time, total_time / iteration))
+                        print("iteration is {}, current_loss is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, loss, average_loss, total_time, total_time / iteration))
 
                         if iteration % 1000 == 0:
                             saver.save(sess, save_path="checkpoint/text_cnn", global_step=self.global_step)
