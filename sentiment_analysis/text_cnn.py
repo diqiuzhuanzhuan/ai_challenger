@@ -162,7 +162,6 @@ class TextCNN(object):
             self._build_graph()
 
     def validation(self, sess):
-        f1 = 0
         samples = 0
         sess.run(self._validation_iterator_initializer)
         all_lab = []
@@ -170,6 +169,7 @@ class TextCNN(object):
         print("正在对验证集进行验证, 请稍等....")
         iteration = 0
         total_loss = 0
+        f1 = 0
         total_time = 0
         while True:
             try:
@@ -181,14 +181,12 @@ class TextCNN(object):
                 )
                 iteration += 1
                 total_loss += loss
-                all_lab.extend(lab)
-                all_res.extend(res)
+                f1 += reduce(lambda x, y: f1_score(x[0], x[1], average="macro") + f1_score(y[0], y[1], average="macro"), zip(lab, res))
                 samples += actual_batch_size
                 total_time += time.time() - delta_t
 
             except tf.errors.OutOfRangeError:
                 print("正在计算f1 score, 请稍等")
-                f1 = reduce(lambda x, y: f1_score(x[0], x[1], average="macro") + f1_score(y[0], y[1], average="macro"), zip(all_lab, all_res))
                 average_f1 = f1 / samples
                 print("验证集运行完毕，平均f1为: {} average_loss is {}, 总耗时为{}秒".format(average_f1, total_loss / iteration, total_time))
                 break
@@ -198,8 +196,8 @@ class TextCNN(object):
         if not os.path.exists("checkpoint"):
             os.mkdir("checkpoint")
 
+        saver = tf.train.Saver(sharded=True)
         with tf.Session(graph=self.graph) as sess:
-            saver = tf.train.Saver(sharded=True)
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
 
             if ckpt and ckpt.model_checkpoint_path:
@@ -243,10 +241,10 @@ class TextCNN(object):
                         total_time += time.time() - delta_t
                         print("iteration is {}, current_loss is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, loss, average_loss, total_time, total_time / iteration))
 
-                        if iteration % 1000 == 0:
+                        if global_step % 1000 == 0 and global_step > 10000:
                             saver.save(sess, save_path="checkpoint/text_cnn", global_step=self.global_step)
                             self.validation(sess)
-                        if (global_step + 1) % 30000 == 0:
+                        if global_step and global_step % 30000 == 0:
                             self._test(sess, global_step)
 
                     except tf.errors.OutOfRangeError:
@@ -299,4 +297,4 @@ if __name__ == "__main__":
     Config._use_lemma = False
     model = TextCNN(sequence_length=3000, filter_sizes=[3, 4, 5], num_filters=256)
     model.build()
-    model.train(300)
+    model.train(1000)
