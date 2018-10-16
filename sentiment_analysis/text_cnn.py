@@ -239,7 +239,6 @@ class TextCNN(object):
                         total_time += time.time() - delta_t
                         print("iteration is {}, current_loss is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, loss, average_loss, total_time, total_time / iteration))
 
-                        self.validation(sess)
                         if global_step % 1000 == 0 and global_step > 20000:
                             saver.save(sess, save_path="checkpoint/text_cnn", global_step=self.global_step)
                             self.validation(sess)
