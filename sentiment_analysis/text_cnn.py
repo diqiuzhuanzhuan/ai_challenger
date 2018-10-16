@@ -11,6 +11,7 @@ from sea import DataFiles, Data, Config
 import time
 import os
 from sklearn.metrics import f1_score
+from functools import reduce
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
@@ -22,7 +23,7 @@ class TextCNN(object):
     """
 
     def __init__(
-            self, sequence_length, filter_sizes, num_filters, batch_size=128, l2_reg_lambda=0.0, embedding_size=256):
+            self, sequence_length, filter_sizes, num_filters, batch_size=64, l2_reg_lambda=0.0, embedding_size=300):
 
         self.graph = tf.Graph()
         with self.graph.as_default():
@@ -44,7 +45,7 @@ class TextCNN(object):
 
             self._labels_num = 20
             self._output_dimension = 4
-            self._learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 1000, 0.96, staircase=True)
+            self._learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 300, 0.96, staircase=True)
             self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
 
     def _load_data(self):
@@ -174,8 +175,8 @@ class TextCNN(object):
             try:
                 delta_t = time.time()
                 feature, len, label = sess.run(self._validation_next)
-                predict, loss, actual_batch_size, lab, res = sess.run(
-                    [self._predict, self._total_loss, self._actual_batch_size, tf.argmax(label, axis=2) - 2, tf.argmax(self._predict, axis=2) - 2],
+                loss, actual_batch_size, lab, res = sess.run(
+                    [self._total_loss, self._actual_batch_size, tf.argmax(label, axis=2) - 2, tf.argmax(self._predict, axis=2) - 2],
                     feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
                 )
                 iteration += 1
@@ -187,11 +188,11 @@ class TextCNN(object):
 
             except tf.errors.OutOfRangeError:
                 print("正在计算f1 score, 请稍等")
-                for l1, l2 in zip(all_res, all_lab):
-                    f1 += f1_score(l2, l1, average="macro")
+                f1 = reduce(lambda x, y: f1_score(x[0], x[1], average="macro") + f1_score(y[0], y[1], average="macro"), zip(all_lab, all_res))
                 average_f1 = f1 / samples
-                print("验证集运行完毕，平均f1为: {} \n average_loss is {}, 总耗时为{}秒".format(average_f1, total_loss / iteration, total_time))
+                print("验证集运行完毕，平均f1为: {} average_loss is {}, 总耗时为{}秒".format(average_f1, total_loss / iteration, total_time))
                 break
+        del all_lab, all_res
 
     def train(self, epoches=10):
         if not os.path.exists("checkpoint"):
@@ -200,9 +201,11 @@ class TextCNN(object):
         with tf.Session(graph=self.graph) as sess:
             saver = tf.train.Saver(sharded=True)
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
+
             if ckpt and ckpt.model_checkpoint_path:
                 print("正在从{}加载模型".format(ckpt.model_checkpoint_path))
                 saver.restore(sess, ckpt.model_checkpoint_path)
+                self.validation(sess)
             else:
                 sess.run(tf.global_variables_initializer())
             writer = tf.summary.FileWriter('graphs/ai_challenger/text_cnn/learning_rate' + str(self._learning_rate), graph=self.graph)
@@ -230,7 +233,7 @@ class TextCNN(object):
                             _, _, loss, summary, max_loss_indice, global_step = sess.run(
                                 [self._train_distribution[max_loss_indice], self._train_total, self._total_loss, self._summary_op, tf.argmax(self._loss, axis=0), self.global_step],
                                 feed_dict={
-                                    self._keep_prob: 0.5, self._feature: feature, self._feature_length: len, self._label: label
+                                    self._keep_prob: 0.8, self._feature: feature, self._feature_length: len, self._label: label
                                 }
                             )
                         total_loss += loss
