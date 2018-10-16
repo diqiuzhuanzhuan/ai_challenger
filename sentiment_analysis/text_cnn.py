@@ -164,8 +164,6 @@ class TextCNN(object):
     def validation(self, sess):
         samples = 0
         sess.run(self._validation_iterator_initializer)
-        all_lab = []
-        all_res = []
         print("正在对验证集进行验证, 请稍等....")
         iteration = 0
         total_loss = 0
@@ -190,7 +188,6 @@ class TextCNN(object):
                 average_f1 = f1 / samples
                 print("验证集运行完毕，平均f1为: {} average_loss is {}, 总耗时为{}秒".format(average_f1, total_loss / iteration, total_time))
                 break
-        del all_lab, all_res
 
     def train(self, epoches=10):
         if not os.path.exists("checkpoint"):
