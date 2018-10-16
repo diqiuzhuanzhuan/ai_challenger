@@ -193,10 +193,11 @@ class TextCNN(object):
         if not os.path.exists("checkpoint"):
             os.mkdir("checkpoint")
 
-        saver = tf.train.Saver(sharded=True)
+        with self.graph.as_default():
+            saver = tf.train.Saver(sharded=True)
+
         with tf.Session(graph=self.graph) as sess:
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
-
             if ckpt and ckpt.model_checkpoint_path:
                 print("正在从{}加载模型".format(ckpt.model_checkpoint_path))
                 saver.restore(sess, ckpt.model_checkpoint_path)
