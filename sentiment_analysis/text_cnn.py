@@ -179,7 +179,7 @@ class TextCNN(object):
                 )
                 iteration += 1
                 total_loss += loss
-                f1 += reduce(lambda x, y: f1_score(x[0], x[1], average="macro") + f1_score(y[0], y[1], average="macro"), zip(lab, res))
+                f1 += reduce(lambda x, y: f1_score(x[0], x[1], average="macro") + f1_score(y[0], y[1], average="macro"), (lab.tolist(), res.tolist()))
                 samples += actual_batch_size
                 total_time += time.time() - delta_t
 
@@ -239,7 +239,8 @@ class TextCNN(object):
                         total_time += time.time() - delta_t
                         print("iteration is {}, current_loss is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, loss, average_loss, total_time, total_time / iteration))
 
-                        if global_step % 1000 == 0 and global_step > 10000:
+                        self.validation(sess)
+                        if global_step % 1000 == 0 and global_step > 20000:
                             saver.save(sess, save_path="checkpoint/text_cnn", global_step=self.global_step)
                             self.validation(sess)
                         if global_step and global_step % 30000 == 0:
