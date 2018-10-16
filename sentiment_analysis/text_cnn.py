@@ -229,7 +229,7 @@ class TextCNN(object):
                             _, _, loss, summary, max_loss_indice, global_step = sess.run(
                                 [self._train_distribution[max_loss_indice], self._train_total, self._total_loss, self._summary_op, tf.argmax(self._loss, axis=0), self.global_step],
                                 feed_dict={
-                                    self._keep_prob: 0.8, self._feature: feature, self._feature_length: len, self._label: label
+                                    self._keep_prob: 0.9, self._feature: feature, self._feature_length: len, self._label: label
                                 }
                             )
                         total_loss += loss
