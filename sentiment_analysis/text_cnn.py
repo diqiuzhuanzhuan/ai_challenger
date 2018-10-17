@@ -182,14 +182,14 @@ class TextCNN(object):
                 total_loss += loss
                 with tf.device("cpu:0"):
                     f1 += reduce(lambda x, y: f1_score(x[0], x[1], average="macro") + f1_score(y[0], y[1], average="macro"), (lab.tolist(), res.tolist()))
-                samples += iteration
+                samples += actual_batch_size
                 delta_f1 = time.time() - delta_t - delta_predict
                 total_time += time.time() - delta_t
-                print("预测时间为:{}, 计算f1时间为{}, 当前f1为{}".format(delta_predict, delta_f1, f1/iteration))
+                print("预测时间为:{}, 计算f1时间为{}, 当前f1为{}".format(delta_predict, delta_f1, f1/samples))
 
             except tf.errors.OutOfRangeError:
                 print("正在计算f1 score, 请稍等")
-                average_f1 = f1 / iteration
+                average_f1 = f1 / samples
                 print("验证集运行完毕，平均f1为: {} average_loss is {}, 总耗时为{}秒".format(average_f1, total_loss / iteration, total_time))
                 break
 
@@ -216,6 +216,7 @@ class TextCNN(object):
             train_next = self._train_iterator.get_next()
             max_loss_indice = None
             total_time = 0
+            global_step = initial_step
             for i in range(initial_step, initial_step + epoches):
                 sess.run(self._train_iterator_initializer)
                 while True:
