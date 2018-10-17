@@ -185,11 +185,11 @@ class TextCNN(object):
                 samples += iteration
                 delta_f1 = time.time() - delta_t - delta_predict
                 total_time += time.time() - delta_t
-                print("预测时间为:{}, 计算f1时间为{}".format(delta_predict, delta_f1))
+                print("预测时间为:{}, 计算f1时间为{}, 当前f1为{}".format(delta_predict, delta_f1, f1/iteration))
 
             except tf.errors.OutOfRangeError:
                 print("正在计算f1 score, 请稍等")
-                average_f1 = f1 / samples
+                average_f1 = f1 / iteration
                 print("验证集运行完毕，平均f1为: {} average_loss is {}, 总耗时为{}秒".format(average_f1, total_loss / iteration, total_time))
                 break
 
@@ -220,10 +220,9 @@ class TextCNN(object):
                 sess.run(self._train_iterator_initializer)
                 while True:
                     try:
-                        self.validation(sess)
                         delta_t = time.time()
                         feature, len, label = sess.run(train_next)
-                        if iteration < 20000 or not max_loss_indice:
+                        if global_step < 30000 or not max_loss_indice:
                             _, loss, summary, global_step = sess.run(
                                 [self._train_total, self._total_loss, self._summary_op, self.global_step],
                                 feed_dict={
