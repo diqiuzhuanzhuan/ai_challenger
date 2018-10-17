@@ -164,7 +164,8 @@ class TextCNN(object):
 
     def validation(self, sess):
         samples = 0
-        sess.run(self._validation_iterator_initializer)
+        val_sess = tf.Session(graph=self.graph)
+        val_sess.run(self._validation_iterator_initializer)
         print("正在对验证集进行验证, 请稍等....")
         iteration = 0
         total_loss = 0
@@ -173,7 +174,7 @@ class TextCNN(object):
         while True:
             try:
                 delta_t = time.time()
-                feature, len, label = sess.run(self._validation_next)
+                feature, len, label = val_sess.run(self._validation_next)
                 loss, actual_batch_size, lab, res = sess.run(
                     [self._total_loss, self._actual_batch_size, tf.argmax(label, axis=2) - 2, self._predict_argmax - 2],
                     feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
@@ -194,6 +195,7 @@ class TextCNN(object):
                 average_f1 = f1 / samples
                 print("验证集运行完毕，平均f1为: {} average_loss is {}, 总耗时为{}秒".format(average_f1, total_loss / iteration, total_time))
                 break
+        val_sess.close()
 
     def train(self, epoches=10):
         if not os.path.exists("checkpoint"):
@@ -224,6 +226,7 @@ class TextCNN(object):
                     try:
                         delta_t = time.time()
                         feature, len, label = sess.run(train_next)
+                   #     self.validation(sess)
                         if global_step < 30000 or not max_loss_indice:
                             _, loss, summary, global_step = sess.run(
                                 [self._train_total, self._total_loss, self._summary_op, self.global_step],
