@@ -181,7 +181,7 @@ class TextCNN(object):
                 iteration += 1
                 total_loss += loss
                 with tf.device("cpu:0"):
-                    f1 += reduce(lambda x, y: f1_score(x[0], x[1], average="macro") + f1_score(y[0], y[1], average="macro"), (lab.tolist(), res.tolist()))
+                    f1 += reduce(lambda x, y: f1_score(x[0], x[1], average="macro") + f1_score(y[0], y[1], average="macro"), zip(lab.tolist(), res.tolist()))
                 samples += actual_batch_size
                 delta_f1 = time.time() - delta_t - delta_predict
                 total_time += time.time() - delta_t
