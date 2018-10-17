@@ -45,7 +45,7 @@ class TextCNN(object):
 
             self._labels_num = 20
             self._output_dimension = 4
-            self._learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 300, 0.96, staircase=True)
+            self._learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 3000, 0.96, staircase=True)
             self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
 
     def _load_data(self):
@@ -177,11 +177,15 @@ class TextCNN(object):
                     [self._total_loss, self._actual_batch_size, tf.argmax(label, axis=2) - 2, tf.argmax(self._predict, axis=2) - 2],
                     feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
                 )
+                delta_predict = time.time() - delta_t
                 iteration += 1
                 total_loss += loss
-                f1 += reduce(lambda x, y: f1_score(x[0], x[1], average="macro") + f1_score(y[0], y[1], average="macro"), (lab.tolist(), res.tolist()))
-                samples += actual_batch_size
+                with tf.device("cpu:0"):
+                    f1 += reduce(lambda x, y: f1_score(x[0], x[1], average="macro") + f1_score(y[0], y[1], average="macro"), (lab.tolist(), res.tolist()))
+                samples += iteration
+                delta_f1 = time.time() - delta_t - delta_predict
                 total_time += time.time() - delta_t
+                print("预测时间为:{}, 计算f1时间为{}".format(delta_predict, delta_f1))
 
             except tf.errors.OutOfRangeError:
                 print("正在计算f1 score, 请稍等")
@@ -216,6 +220,7 @@ class TextCNN(object):
                 sess.run(self._train_iterator_initializer)
                 while True:
                     try:
+                        self.validation(sess)
                         delta_t = time.time()
                         feature, len, label = sess.run(train_next)
                         if iteration < 20000 or not max_loss_indice:
