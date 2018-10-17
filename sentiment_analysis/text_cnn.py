@@ -182,7 +182,8 @@ class TextCNN(object):
                 iteration += 1
                 total_loss += loss
                 with tf.device("cpu:0"):
-                    f1 += np.sum([f1_score(i, j, average="macro") for i, j in zip(lab, res)])
+                    f1 += np.sum(list(map(lambda x: f1_score(x[0], x[1], average="macro"), zip(lab.tolist(), res.tolist()))))
+
                 samples += actual_batch_size
                 delta_f1 = time.time() - delta_t - delta_predict
                 total_time += time.time() - delta_t
@@ -200,7 +201,6 @@ class TextCNN(object):
 
         with self.graph.as_default():
             saver = tf.train.Saver(sharded=True)
-
         with tf.Session(graph=self.graph) as sess:
             ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:
