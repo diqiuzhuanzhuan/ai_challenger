@@ -11,7 +11,6 @@ from sea import DataFiles, Data, Config
 import time
 import os
 from sklearn.metrics import f1_score
-from functools import reduce
 import numpy as np
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
