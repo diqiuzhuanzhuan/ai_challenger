@@ -186,4 +186,4 @@ def main(is_test=False):
                 train()
 
 if __name__ == "__main__":
-    main(True)
+    main(False)
