@@ -86,7 +86,6 @@ def main(is_test=False):
 
             train_handle = sess.run(data._train_iterator.string_handle())
             validation_handle = sess.run(data._validation_iterator.string_handle())
-            test_handle = sess.run(data._test_iterator.string_handle())
 
             # 是否需要恢复模型
             ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_path)
@@ -94,7 +93,7 @@ def main(is_test=False):
                 print("正在从{}加载模型".format(ckpt.model_checkpoint_path))
                 saver.restore(sess, ckpt.model_checkpoint_path)
 
-            def test_step():
+            def test_step(test_handle):
                 feed_dict = {
                     cnn._keep_prob: 1.0, handle: test_handle
                 }
@@ -105,11 +104,12 @@ def main(is_test=False):
                 data.feed_output(res)
 
             def test():
+                test_handle = sess.run(data._test_iterator.string_handle())
                 global_step = sess.run(cnn.global_step)
                 sess.run(test_iterator_initializer)
                 while True:
                     try:
-                        test_step()
+                        test_step(test_handle)
                     except tf.errors.OutOfRangeError:
                         data.persist(filename="result_{}.csv".format(global_step))
                         print("测试结果已经保存, result_{}.csv".format(global_step))
