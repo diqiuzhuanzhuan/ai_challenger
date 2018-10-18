@@ -119,8 +119,11 @@ def main():
                         delta_t = time.time() - t1
                         print("training: step is {}, loss is {}, cost {} 秒".format(step, loss, delta_t))
                         if step > FLAGS.step_bypass_validation and step % FLAGS.step_validation == 0:
-                            saver.save(sess, save_path=checkpoints_prefix)
+                            saver.save(sess, save_path=checkpoints_prefix, global_step=step)
                             validation()
+                        if step % FLAGS.step_validation == 0:
+                            saver.save(sess, save_path=checkpoints_prefix, global_step=step)
+
                     except tf.errors.OutOfRangeError:
                         break
 
