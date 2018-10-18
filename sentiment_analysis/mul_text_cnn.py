@@ -29,16 +29,17 @@ class TextCNN(object):
         self.weights = weight
 
         # placeholder
-        self._feature = tf.placeholder(tf.int64, [None, self._sequence_length], name="feature")
-        self._label = tf.placeholder(tf.int64, [None, None, None], name="label")
-
-        self._feature_length = tf.placeholder(dtype=tf.int64, shape=[None, None], name="feature_length")
+#        self._feature = tf.placeholder(tf.int64, [None, self._sequence_length], name="feature")
+#        self._label = tf.placeholder(tf.int64, [None, None, None], name="label")
+#        self._feature_length = tf.placeholder(dtype=tf.int64, shape=[None, None], name="feature_length")
 
         self._feature = next_element[0]
         self._feature_length = next_element[1]
         self._label = next_element[2]
+        self._actual_batch_size = tf.shape(self._feature)[0]
 
         self._keep_prob = tf.placeholder(tf.float32, name="keep_prob")
+
 
         # global_step
         self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)

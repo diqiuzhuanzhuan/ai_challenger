@@ -93,24 +93,24 @@ def main():
                 print("正在从{}加载模型".format(ckpt.model_checkpoint_path))
                 saver.restore(sess, ckpt.model_checkpoint_path)
 
-            def train_step(feature, feature_len, label):
+            def train_step():
                 feed_dict = {
-                    cnn._keep_prob: 1.0, cnn._feature: feature, cnn._feature_length: feature_len, cnn._label: label, handle: train_handle
+                    cnn._keep_prob: 1.0, handle: train_handle
                 }
                 _, loss, global_step, summary_op, actual_batch_size = sess.run(
-                    [cnn._train_total, cnn._total_loss, cnn.global_step, cnn._summary_op, tf.shape(feature)[0]],
+                    [cnn._train_total, cnn._total_loss, cnn.global_step, cnn._summary_op, cnn._actual_batch_size],
                     feed_dict=feed_dict
                 )
                 writer.add_summary(summary_op, global_step=global_step)
                 return loss, global_step, actual_batch_size
 
-            def validation_step(feature, feature_len, label):
+            def validation_step():
                 feed_dict = {
-                    cnn._keep_prob: 1.0, cnn._feature: feature, cnn._feature_length: feature_len, cnn._label: label, handle: validation_handle
+                    cnn._keep_prob: 1.0, handle: validation_handle
                 }
 
                 loss, actual_batch_size, lab, res = sess.run(
-                    [cnn._total_loss, tf.shape(feature)[0], tf.argmax(label, axis=2) - 2, cnn.predict - 2],
+                    [cnn._total_loss, cnn._actual_batch_size, tf.argmax(cnn._label, axis=2) - 2, cnn.predict - 2],
                     feed_dict=feed_dict
                 )
                 return loss, actual_batch_size, lab, res
@@ -119,8 +119,7 @@ def main():
                 while True:
                     try:
                         t1 = time.time()
-                        feature, feature_len, label = sess.run(train_next)
-                        loss, step, actual_batch_size = train_step(feature, feature_len, label)
+                        loss, step, actual_batch_size = train_step()
                         delta_t = time.time() - t1
                         print("training: step is {}, loss is {}, cost {} 秒".format(step, loss, delta_t))
                         if step > FLAGS.step_bypass_validation and step % FLAGS.step_validation == 0:
@@ -141,8 +140,7 @@ def main():
                 while True:
                     try:
                         t1 = time.time()
-                        feature, feature_len, label = sess.run(validation_next)
-                        loss, actual_batch_size, lab, res = validation_step(feature, feature_len, label)
+                        loss, actual_batch_size, lab, res = validation_step()
                         f1 += np.sum(list(map(lambda x: f1_score(x[0], x[1], average="macro"), zip(lab.tolist(), res.tolist()))))
                         samples += actual_batch_size
                         total_validation_loss += loss
