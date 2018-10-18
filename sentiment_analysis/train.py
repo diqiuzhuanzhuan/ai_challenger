@@ -144,6 +144,7 @@ def main():
 
                     except tf.errors.OutOfRangeError:
                         print("平均f1为:{}, 平均loss为{}, 总耗时{}秒".format(f1/samples, total_validation_loss/samples, total_time))
+                        break
 
             for i in range(FLAGS.num_epochs):
                 sess.run(train_iterator_initializer)
