@@ -25,10 +25,10 @@ tf.flags.DEFINE_integer("labels_num", 20, "class num of task")
 tf.flags.DEFINE_integer("output_dimension", 4, "output dimension")
 tf.flags.DEFINE_boolean("use_lemma", False, "if use lemma or not")
 
-tf.flags.DEFINE_integer("step_bypass_validation", 2, "how many steps was run before we start to run the first validation?")
-tf.flags.DEFINE_integer("step_validation", 10, "validation run every many steps")
-tf.flags.DEFINE_integer("num_epochs", 200, "Number of training epochs (default: 200)")
-tf.flags.DEFINE_integer("batch_size", 64, "batch_size")
+tf.flags.DEFINE_integer("step_bypass_validation", 30000, "how many steps was run before we start to run the first validation?")
+tf.flags.DEFINE_integer("step_validation", 3000, "validation run every many steps")
+tf.flags.DEFINE_integer("num_epochs", 500, "Number of training epochs (default: 200)")
+tf.flags.DEFINE_integer("batch_size", 128, "batch_size")
 tf.flags.DEFINE_float("learning_rate", 0.1, "initial learning rate")
 tf.flags.DEFINE_string("summary_path", "./graphs/", "summary path")
 tf.flags.DEFINE_string("checkpoint_path", "./checkpoint", "Checkpoint file path for saving")
@@ -113,7 +113,8 @@ def main():
                 while True:
                     try:
                         t1 = time.time()
-                        feature, feature_len, label = sess.run(train_next)
+                        with tf.device("/cpu:0"):
+                            feature, feature_len, label = sess.run(train_next)
                         loss, step, actual_batch_size = train_step(feature, feature_len, label)
                         delta_t = time.time() - t1
                         print("training: step is {}, loss is {}, cost {} 秒".format(step, loss, delta_t))
