@@ -14,7 +14,7 @@ from sea import Data, Config
 from sklearn.metrics import f1_score
 from mul_text_cnn import TextCNN
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 tf.flags.DEFINE_integer("embedding_size", 256, "Dimensionality of character embedding (default: 256)")
 tf.flags.DEFINE_string("filter_sizes", "2,3,4,5", "Comma-separated filter sizes (default: '3,4,5')")
