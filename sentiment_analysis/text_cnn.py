@@ -99,18 +99,17 @@ class TextCNN(object):
     def _create_output(self):
         with tf.name_scope("output"):
             self._input = tf.layers.dense(inputs=self.h_drop, units=256, kernel_initializer=tf.truncated_normal_initializer(stddev=0.1), activation=tf.nn.relu)
-            self._logits = [
+            self.__logits = [
                 tf.layers.dense(inputs=self._input, units=128, kernel_initializer=tf.truncated_normal_initializer(seed=i, stddev=0.1), activation=tf.nn.relu)
                 for i in range(self._labels_num)
             ]
 
             self._logits = [
-                tf.layers.dense(inputs=self._logits[i], units=self._output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i * 10, stddev=0.1), activation=None)
+                tf.layers.dense(inputs=self.__logits[i], units=self._output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i * 10, stddev=0.1), activation=None)
                 for i in range(self._labels_num)
             ]
             # self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i], name="softmax" + str(i)) for i in range(self._labels_num)])
-            self._predict = tf.stack(self._logits)
-            self._predict = tf.argmax(self._predict, axis=2)
+            self._predict = tf.argmax(tf.stack(self._logits), axis=2)
             self._predict_argmax = tf.transpose(self._predict, [1, 0])
             self._predict = tf.one_hot(self._predict, depth=self._output_dimension, dtype=tf.int64)
             self._predict = tf.transpose(self._predict, [1, 0, 2])
@@ -290,10 +289,9 @@ class TextCNN(object):
                 try:
                     feature, len, label = sess.run(test_next)
                     predict = sess.run(
-                        self._predict, feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
+                        self._predict_argmax - 2, feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
                     )
-                    res = sess.run(tf.argmax(predict, axis=2, output_type=tf.int64) - 2)
-                    self._data.feed_output(res)
+                    self._data.feed_output(predict)
 
                 except tf.errors.OutOfRangeError:
                     break

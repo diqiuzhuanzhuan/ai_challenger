@@ -91,6 +91,7 @@ class LookMan(object):
 
 class Config(object):
     _use_lemma = True
+    _use_cudnngru = False
 
 
 class Data(object):
@@ -275,6 +276,7 @@ class Data(object):
                                                    padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
         self._train_iterator = tf.data.Iterator.from_structure(train_dataset.output_types, train_dataset.output_shapes)
+        self._train_next = self._train_iterator.get_next()
         self._train_iterator_initializer = self._train_iterator.make_initializer(train_dataset)
 
     def _load_validation_data(self):
@@ -284,6 +286,7 @@ class Data(object):
                                                              padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         validation_dataset = validation_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
         self._validation_iterator = tf.data.Iterator.from_structure(validation_dataset.output_types, validation_dataset.output_shapes)
+        self._validation_next = self._validation_iterator.get_next()
         self._validation_iterator_initializer = self._validation_iterator.make_initializer(validation_dataset)
 
     def _load_test_data(self):
@@ -293,6 +296,7 @@ class Data(object):
                                                  padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
         test_dataset = test_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
         self._test_iterator = tf.data.Iterator.from_structure(test_dataset.output_types,test_dataset.output_shapes)
+        self._test_next = self._test_iterator.get_next()
         self._test_iterator_initializer = self._test_iterator.make_initializer(test_dataset)
 
     def load_data(self):
@@ -316,8 +320,9 @@ class Data(object):
         self._output_cursor = 0
 
     def calc_weight(self):
-        self.load_data()
         all = []
+        self._load_train_data()
+        self._load_validation_data()
         with tf.Session() as sess:
             sess.run(self._train_iterator_initializer)
             while True:
