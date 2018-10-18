@@ -57,12 +57,14 @@ def main():
         train_iterator_initializer = data._train_iterator_initializer
         validation_next = data._validation_next
         validation_iterator_initializer = data._validation_iterator_initializer
+        handle, next_element = data.load_train_and_validation_data()
 
         session_conf = tf.ConfigProto(
             allow_soft_placement=FLAGS.allow_soft_placement,
             log_device_placement=FLAGS.log_device_placement)
         sess = tf.Session(config=session_conf)
         with sess.as_default():
+
             cnn = TextCNN(batch_size=FLAGS.batch_size,
                           learning_rate=FLAGS.learning_rate,
                           embedding_size=FLAGS.embedding_size,
@@ -72,7 +74,8 @@ def main():
                           filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
                           weight=weight,
                           labes_num=FLAGS.labels_num,
-                          output_dimension=FLAGS.output_dimension)
+                          output_dimension=FLAGS.output_dimension,
+                          next_element=next_element)
 
             writer = tf.summary.FileWriter('graphs/text_cnn/learning_rate' + str(cnn._learning_rate))
             if not os.path.exists(FLAGS.checkpoint_path):
@@ -80,6 +83,9 @@ def main():
             checkpoints_prefix = os.path.join(FLAGS.checkpoint_path, "text_cnn")
             saver = tf.train.Saver(tf.global_variables())
             sess.run(tf.global_variables_initializer())
+
+            train_handle = sess.run(data._train_iterator.string_handle())
+            validation_handle = sess.run(data._validation_iterator.string_handle())
 
             # 是否需要恢复模型
             ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_path)
@@ -89,7 +95,7 @@ def main():
 
             def train_step(feature, feature_len, label):
                 feed_dict = {
-                    cnn._keep_prob: 1.0, cnn._feature: feature, cnn._feature_length: feature_len, cnn._label: label
+                    cnn._keep_prob: 1.0, cnn._feature: feature, cnn._feature_length: feature_len, cnn._label: label, handle: train_handle
                 }
                 _, loss, global_step, summary_op, actual_batch_size = sess.run(
                     [cnn._train_total, cnn._total_loss, cnn.global_step, cnn._summary_op, tf.shape(feature)[0]],
@@ -100,7 +106,7 @@ def main():
 
             def validation_step(feature, feature_len, label):
                 feed_dict = {
-                    cnn._keep_prob: 1.0, cnn._feature: feature, cnn._feature_length: feature_len, cnn._label: label
+                    cnn._keep_prob: 1.0, cnn._feature: feature, cnn._feature_length: feature_len, cnn._label: label, handle: validation_handle
                 }
 
                 loss, actual_batch_size, lab, res = sess.run(
