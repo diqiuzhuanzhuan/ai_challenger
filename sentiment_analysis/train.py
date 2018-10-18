@@ -113,8 +113,7 @@ def main():
                 while True:
                     try:
                         t1 = time.time()
-                        with tf.device("/cpu:0"):
-                            feature, feature_len, label = sess.run(train_next)
+                        feature, feature_len, label = sess.run(train_next)
                         loss, step, actual_batch_size = train_step(feature, feature_len, label)
                         delta_t = time.time() - t1
                         print("training: step is {}, loss is {}, cost {} 秒".format(step, loss, delta_t))
