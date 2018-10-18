@@ -14,7 +14,7 @@ from sea import Data, Config
 from sklearn.metrics import f1_score
 from mul_text_cnn import TextCNN
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 tf.flags.DEFINE_integer("embedding_size", 256, "Dimensionality of character embedding (default: 256)")
 tf.flags.DEFINE_string("filter_sizes", "2,3,4,5", "Comma-separated filter sizes (default: '3,4,5')")
@@ -150,7 +150,6 @@ def main(is_test=False):
                         delta_t = time.time() - t1
                         print("training: step is {}, loss is {}, cost {} 秒".format(step, loss, delta_t))
                         if step > FLAGS.step_bypass_validation and step % FLAGS.step_validation == 0:
-                            print(checkpoints_prefix)
                             saver.save(sess, save_path=checkpoints_prefix, global_step=step)
                             validation()
                         if step % FLAGS.step_validation == 0:
