@@ -25,8 +25,8 @@ tf.flags.DEFINE_integer("labels_num", 20, "class num of task")
 tf.flags.DEFINE_integer("output_dimension", 4, "output dimension")
 tf.flags.DEFINE_boolean("use_lemma", False, "if use lemma or not")
 
-tf.flags.DEFINE_integer("step_bypass_validation", 30000, "how many steps was run before we start to run the first validation?")
-tf.flags.DEFINE_integer("step_validation", 3000, "validation run every many steps")
+tf.flags.DEFINE_integer("step_bypass_validation", 1, "how many steps was run before we start to run the first validation?")
+tf.flags.DEFINE_integer("step_validation", 1, "validation run every many steps")
 tf.flags.DEFINE_integer("num_epochs", 500, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("batch_size", 64, "batch_size")
 tf.flags.DEFINE_float("learning_rate", 0.1, "initial learning rate")
@@ -46,18 +46,18 @@ def load_data():
     return data
 
 
-def main():
+def main(is_test=False):
     Config._use_lemma = FLAGS.use_lemma
 
     with tf.Graph().as_default():
         data = load_data()
         weight = data.weights
         vocab_size = data.get_vocab_size()
-        train_next = data._train_next
         train_iterator_initializer = data._train_iterator_initializer
-        validation_next = data._validation_next
         validation_iterator_initializer = data._validation_iterator_initializer
-        handle, next_element = data.load_train_and_validation_data()
+        test_iterator_initializer = data._test_iterator_initializer
+        handle = data.handle
+        next_element = data.next_element
 
         session_conf = tf.ConfigProto(
             allow_soft_placement=FLAGS.allow_soft_placement,
@@ -86,12 +86,39 @@ def main():
 
             train_handle = sess.run(data._train_iterator.string_handle())
             validation_handle = sess.run(data._validation_iterator.string_handle())
+            test_handle = sess.run(data._test_iterator.string_handle())
 
             # 是否需要恢复模型
             ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_path)
             if ckpt and ckpt.model_checkpoint_path:
                 print("正在从{}加载模型".format(ckpt.model_checkpoint_path))
                 saver.restore(sess, ckpt.model_checkpoint_path)
+
+            def test_step():
+                feed_dict = {
+                    cnn._keep_prob: 1.0, handle: test_handle
+                }
+                res = sess.run(
+                    cnn.predict-2,
+                    feed_dict=feed_dict
+                )
+                data.feed_output(res)
+
+            def test():
+                global_step = sess.run(cnn.global_step)
+                sess.run(test_iterator_initializer)
+                while True:
+                    try:
+                        test_step()
+                    except tf.errors.OutOfRangeError:
+                        data.persist(filename="result_{}.csv".format(global_step))
+                        print("测试结果已经保存, result_{}.csv".format(global_step))
+                        break
+            if is_test:
+                print("正在进行测试")
+                test()
+                print("测试结束")
+                return
 
             def train_step():
                 feed_dict = {
@@ -123,6 +150,7 @@ def main():
                         delta_t = time.time() - t1
                         print("training: step is {}, loss is {}, cost {} 秒".format(step, loss, delta_t))
                         if step > FLAGS.step_bypass_validation and step % FLAGS.step_validation == 0:
+                            print(checkpoints_prefix)
                             saver.save(sess, save_path=checkpoints_prefix, global_step=step)
                             validation()
                         if step % FLAGS.step_validation == 0:
@@ -157,6 +185,5 @@ def main():
                 print("第{}个epoch".format(i))
                 train()
 
-
 if __name__ == "__main__":
-    main()
+    main(True)
