@@ -87,6 +87,7 @@ def main(is_test=False):
 
             train_handle = sess.run(data._train_iterator.string_handle())
             validation_handle = sess.run(data._validation_iterator.string_handle())
+            test_handle = sess.run(data._test_iterator.string_handle())
 
             # 是否需要恢复模型
             ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_path)
@@ -105,7 +106,6 @@ def main(is_test=False):
                 data.feed_output(res)
 
             def test():
-                test_handle = sess.run(data._test_iterator.string_handle())
                 global_step = sess.run(cnn.global_step)
                 sess.run(test_iterator_initializer)
                 while True:
@@ -188,6 +188,7 @@ def main(is_test=False):
                 sess.run(train_iterator_initializer)
                 print("第{}个epoch".format(i))
                 train()
+
 
 if __name__ == "__main__":
     main(False)
