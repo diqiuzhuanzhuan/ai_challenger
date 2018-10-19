@@ -28,11 +28,6 @@ class TextCNN(object):
         self._output_dimension = output_dimension
         self.weights = weight
 
-        # placeholder
-#        self._feature = tf.placeholder(tf.int64, [None, self._sequence_length], name="feature")
-#        self._label = tf.placeholder(tf.int64, [None, None, None], name="label")
-#        self._feature_length = tf.placeholder(dtype=tf.int64, shape=[None, None], name="feature_length")
-
         self._feature = next_element[0]
         self._feature_length = next_element[1]
         self._label = next_element[2]
@@ -111,9 +106,7 @@ class TextCNN(object):
         with tf.name_scope("create_optimizer"):
             optimizer = tf.train.AdamOptimizer(learning_rate=self._train_learning_rate)
             self._grads_total = optimizer.compute_gradients(self._total_loss)
-            #self._grads_distribution = [optimizer.compute_gradients(self._loss_[i]) for i in range(self._labels_num)]
             self._train_total = optimizer.apply_gradients(self._grads_total, global_step=self.global_step)
-            #self._train_distribution = [optimizer.apply_gradients(self._grads_distribution[i], global_step=self.global_step) for i in range(self._labels_num)]
 
         with tf.name_scope("create_summary"):
             grad_summaries = []
