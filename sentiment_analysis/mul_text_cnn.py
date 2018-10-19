@@ -88,7 +88,7 @@ class TextCNN(object):
         # create output
         with tf.name_scope("output"):
             def my_dense(inputs, units, activation):
-                return tf.layers.dense(inputs, units, kernel_initializer=tf.truncated_normal_initializer(stddev=0.1), activation=activation)
+                return tf.contrib.layers.fully_connected(inputs, units, activation)
 
             input_1_layer = my_dense(self.h_drop, 256, tf.nn.relu)
 
