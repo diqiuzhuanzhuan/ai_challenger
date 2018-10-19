@@ -25,7 +25,7 @@ tf.flags.DEFINE_integer("labels_num", 20, "class num of task")
 tf.flags.DEFINE_integer("output_dimension", 4, "output dimension")
 tf.flags.DEFINE_boolean("use_lemma", False, "if use lemma or not")
 
-tf.flags.DEFINE_integer("step_bypass_validation", 30000, "how many steps was run before we start to run the first validation?")
+tf.flags.DEFINE_integer("step_bypass_validation", 40000, "how many steps was run before we start to run the first validation?")
 tf.flags.DEFINE_integer("step_validation", 3000, "validation run every many steps")
 tf.flags.DEFINE_integer("num_epochs", 500, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("batch_size", 64, "batch_size")
@@ -48,6 +48,7 @@ def load_data():
 
 def main(is_test=False):
     Config._use_lemma = FLAGS.use_lemma
+    tf.reset_default_graph()
 
     with tf.Graph().as_default():
         data = load_data()
@@ -81,7 +82,7 @@ def main(is_test=False):
             if not os.path.exists(FLAGS.checkpoint_path):
                 os.makedirs(FLAGS.checkpoint_path)
             checkpoints_prefix = os.path.join(FLAGS.checkpoint_path, "text_cnn")
-            saver = tf.train.Saver(tf.global_variables())
+            saver = tf.train.Saver()
             sess.run(tf.global_variables_initializer())
 
             train_handle = sess.run(data._train_iterator.string_handle())
@@ -151,7 +152,10 @@ def main(is_test=False):
                         print("training: step is {}, loss is {}, cost {} 秒".format(step, loss, delta_t))
                         if step > FLAGS.step_bypass_validation and step % FLAGS.step_validation == 0:
                             saver.save(sess, save_path=checkpoints_prefix, global_step=step)
-                            validation()
+                            average_f1 = validation()
+                            if average_f1 > 0.68:
+                                test()
+
                         if step % FLAGS.step_validation == 0:
                             saver.save(sess, save_path=checkpoints_prefix, global_step=step)
 
@@ -178,6 +182,7 @@ def main(is_test=False):
                     except tf.errors.OutOfRangeError:
                         print("平均f1为:{}, 平均loss为{}, 总耗时{}秒".format(f1/samples, total_validation_loss/samples, total_time))
                         break
+                return f1/samples
 
             for i in range(FLAGS.num_epochs):
                 sess.run(train_iterator_initializer)
