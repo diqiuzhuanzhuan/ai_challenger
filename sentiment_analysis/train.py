@@ -49,6 +49,7 @@ def load_data():
 def main(is_test=False):
     Config._use_lemma = FLAGS.use_lemma
     tf.reset_default_graph()
+    tf.set_random_seed(12)
 
     with tf.Graph().as_default():
         data = load_data()
