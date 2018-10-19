@@ -272,21 +272,21 @@ class Data(object):
 
     def _load_train_and_validation_data(self):
 
-        train_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
+        train_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int32, tf.int32, tf.int32), ([None], [None], [self._labels_num]))
         train_dataset = train_dataset.map(lambda *x: (self.__truncate_sentence(x[0]), x[1], x[2])).padded_batch(self._batch_size, padded_shapes=([self._max_length], [None], [None]),
                                                                                                                 padding_values=(
-                                                                                                                tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
+                                                                                                                tf.constant(1, dtype=tf.int32), tf.constant(0, dtype=tf.int32), tf.constant(0, dtype=tf.int32)))
 
-        train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
+        train_dataset = train_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int32)))
 
         self._train_iterator = tf.data.Iterator.from_structure(train_dataset.output_types, train_dataset.output_shapes)
         self._train_iterator_initializer = self._train_iterator.make_initializer(train_dataset)
 
-        validation_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
+        validation_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int32, tf.int32, tf.int32), ([None], [None], [self._labels_num]))
         validation_dataset = validation_dataset.map(lambda *x: (self.__truncate_sentence(x[0]), x[1], x[2])) \
             .padded_batch(self._batch_size, padded_shapes=([self._max_length], [None], [self._labels_num]),
-                          padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
-        validation_dataset = validation_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
+                          padding_values=(tf.constant(1, dtype=tf.int32), tf.constant(0, dtype=tf.int32), tf.constant(0, dtype=tf.int32)))
+        validation_dataset = validation_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int32)))
         self._validation_iterator = tf.data.Iterator.from_structure(validation_dataset.output_types, validation_dataset.output_shapes)
         self._validation_iterator_initializer = self._validation_iterator.make_initializer(validation_dataset)
 
@@ -296,11 +296,11 @@ class Data(object):
         self.next_element = iterator.get_next()
 
     def _load_test_data(self):
-        test_dataset = tf.data.Dataset.from_generator(self._gen_test_data, (tf.int64, tf.int64, tf.int64), ([None], [None], [self._labels_num]))
+        test_dataset = tf.data.Dataset.from_generator(self._gen_test_data, (tf.int32, tf.int32, tf.int32), ([None], [None], [self._labels_num]))
         test_dataset = test_dataset.map(lambda *x: (self.__truncate_sentence(x[0]), x[1], x[2]))\
             .padded_batch(self._batch_size, padded_shapes=([self._max_length], [None], [None]),
-                                                 padding_values=(tf.constant(1, dtype=tf.int64), tf.constant(0, dtype=tf.int64), tf.constant(0, dtype=tf.int64)))
-        test_dataset = test_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int64)))
+                                                 padding_values=(tf.constant(1, dtype=tf.int32), tf.constant(0, dtype=tf.int32), tf.constant(0, dtype=tf.int32)))
+        test_dataset = test_dataset.map(lambda *x: (x[0], x[1], tf.one_hot(indices=x[2], depth=4, dtype=tf.int32)))
         self._test_iterator = tf.data.Iterator.from_structure(test_dataset.output_types,test_dataset.output_shapes)
         self._test_iterator_initializer = self._test_iterator.make_initializer(test_dataset)
 
