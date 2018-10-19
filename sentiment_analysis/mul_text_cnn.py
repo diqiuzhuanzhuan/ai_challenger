@@ -40,7 +40,6 @@ class TextCNN(object):
 
         self._keep_prob = tf.placeholder(tf.float32, name="keep_prob")
 
-
         # global_step
         self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)
 
@@ -88,20 +87,19 @@ class TextCNN(object):
 
         # create output
         with tf.name_scope("output"):
-            input_1_layer = tf.layers.dense(inputs=self.h_drop, units=256, kernel_initializer=tf.truncated_normal_initializer(stddev=0.1), activation=tf.nn.relu)
-            input_2_layer = logits = [
-                tf.layers.dense(inputs=input_1_layer, units=128, kernel_initializer=tf.truncated_normal_initializer(stddev=0.1), activation=tf.nn.relu)
-                for i in range(self._labels_num)
-            ]
+            def my_dense(inputs, units, activation):
+                return tf.layers.dense(inputs, units, kernel_initializer=tf.truncated_normal_initializer(stddev=0.1), activation=activation)
 
-            input_3_layer = [
-                tf.layers.dense(inputs=input_2_layer[i], units=self._output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i * 10, stddev=0.1), activation=None)
-                for i in range(self._labels_num)
-            ]
+            input_1_layer = my_dense(self.h_drop, 256, tf.nn.relu)
+
+            input_2_layer = [my_dense(input_1_layer, units=128, activation=tf.nn.relu) for _ in range(self._labels_num)]
+
+            input_3_layer = [my_dense(inputs=input_2_layer[i], units=self._output_dimension, activation=None) for i in range(self._labels_num)]
             self.logits = input_3_layer
-            # self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i], name="softmax" + str(i)) for i in range(self._labels_num)])
+
             predict = tf.argmax(tf.stack(input_3_layer), axis=2)
-            self.predict = tf.transpose(predict, [1, 0])
+
+            self.predict = tf.transpose(predict, [1, 0], name="predict")
 
         with tf.name_scope("create_loss"):
             length = self._labels_num
