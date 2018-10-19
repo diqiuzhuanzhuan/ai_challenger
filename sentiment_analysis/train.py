@@ -29,7 +29,7 @@ tf.flags.DEFINE_integer("step_bypass_validation", 40000, "how many steps was run
 tf.flags.DEFINE_integer("step_validation", 3000, "validation run every many steps")
 tf.flags.DEFINE_integer("num_epochs", 500, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("batch_size", 64, "batch_size")
-tf.flags.DEFINE_float("learning_rate", 0.1, "initial learning rate")
+tf.flags.DEFINE_float("learning_rate", 1.0, "initial learning rate")
 tf.flags.DEFINE_string("summary_path", "./graphs/", "summary path")
 tf.flags.DEFINE_string("checkpoint_path", "./checkpoint", "Checkpoint file path for saving")
 
