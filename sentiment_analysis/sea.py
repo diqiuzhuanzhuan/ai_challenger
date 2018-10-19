@@ -61,7 +61,7 @@ class DataFiles:
 class LookMan(object):
 
     def __init__(self, dict_file, num_oov_buckets=1):
-        self._box = set()
+        self._box = []
         self._table = {}
         self._num_oov = -1
         self._num_oov = num_oov_buckets
@@ -71,7 +71,7 @@ class LookMan(object):
                 if not line:
                     break
                 line = line.strip("\n")
-                self._box.add(line)
+                self._box.append(line)
 
         k = 0
         for i in self._box:
@@ -215,7 +215,6 @@ class Data(object):
         print("字典文件加载完成，字典大小为: {}".format(self._vocab_size))
         print("词典文件加载完成，词典大小为: {}".format(self._lemma_size))
 
-
     def _get_has_label_data(self, file_names):
         for file in file_names:
             lines = pd.read_csv(file, delimiter=",")
@@ -357,6 +356,7 @@ class Data(object):
                 try:
                     res = sess.run(self._validation_iterator.get_next())
                     print(res)
+                    break
                 except tf.errors.OutOfRangeError:
                     break
 
