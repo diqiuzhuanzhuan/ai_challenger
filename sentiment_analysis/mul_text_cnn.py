@@ -113,7 +113,7 @@ class TextCNN(object):
             self._grads_total = optimizer.compute_gradients(self._total_loss)
             self._grads_distribution = [optimizer.compute_gradients(self._loss_[i]) for i in range(self._labels_num)]
             self._train_total = optimizer.apply_gradients(self._grads_total, global_step=self.global_step)
-            self._train_distribution = [optimizer.apply_gradients(self._grads_distribution[i], global_step=self.global_step) for i in range(self._labels_num)]
+            #self._train_distribution = [optimizer.apply_gradients(self._grads_distribution[i], global_step=self.global_step) for i in range(self._labels_num)]
 
         with tf.name_scope("create_summary"):
             grad_summaries = []
