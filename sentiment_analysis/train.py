@@ -21,7 +21,7 @@ tf.flags.DEFINE_string("filter_sizes", "2,3,4,5", "Comma-separated filter sizes 
 tf.flags.DEFINE_integer("num_filters", 256, "Number of filters per filter size (default: 256)")
 tf.flags.DEFINE_float("dropout_keep_prob", 1.0, "Dropout keep probability (default: 1.0)")
 tf.flags.DEFINE_integer("max_length", 3000, "Max length of sentence")
-tf.flags.DEFINE_integer("labels_num", 1, "class num of task")
+tf.flags.DEFINE_integer("labels_num", 20, "class num of task")
 tf.flags.DEFINE_integer("output_dimension", 4, "output dimension")
 tf.flags.DEFINE_boolean("use_lemma", False, "if use lemma or not")
 
