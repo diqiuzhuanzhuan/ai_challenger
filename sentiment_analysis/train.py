@@ -21,7 +21,7 @@ tf.flags.DEFINE_string("filter_sizes", "2,3,4,5", "Comma-separated filter sizes 
 tf.flags.DEFINE_integer("num_filters", 256, "Number of filters per filter size (default: 256)")
 tf.flags.DEFINE_float("dropout_keep_prob", 1.0, "Dropout keep probability (default: 1.0)")
 tf.flags.DEFINE_integer("max_length", 3000, "Max length of sentence")
-tf.flags.DEFINE_integer("labels_num", 20, "class num of task")
+tf.flags.DEFINE_integer("labels_num", 1, "class num of task")
 tf.flags.DEFINE_integer("output_dimension", 4, "output dimension")
 tf.flags.DEFINE_boolean("use_lemma", False, "if use lemma or not")
 
@@ -169,19 +169,21 @@ def main(is_test=False):
                 total_validation_loss = 0
                 total_time = 0
                 sess.run(validation_iterator_initializer)
+                iteration = 0
                 while True:
                     try:
                         t1 = time.time()
                         loss, actual_batch_size, lab, res = validation_step()
                         f1 += np.sum(list(map(lambda x: f1_score(x[0], x[1], average="macro"), zip(lab.tolist(), res.tolist()))))
                         samples += actual_batch_size
+                        iteration += 1
                         total_validation_loss += loss
                         delta_t = time.time() - t1
                         total_time += delta_t
                         print("当前f1为:{}, loss 为{}, 花费{}秒".format(f1/samples, loss, delta_t))
 
                     except tf.errors.OutOfRangeError:
-                        print("平均f1为:{}, 平均loss为{}, 总耗时{}秒".format(f1/samples, total_validation_loss/samples, total_time))
+                        print("平均f1为:{}, 平均loss为{}, 总耗时{}秒".format(f1/samples, total_validation_loss/iteration, total_time))
                         break
                 return f1/samples
 
