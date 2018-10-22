@@ -9,6 +9,7 @@ email: diqiuzhuanzhuan@gmail.com
 
 
 import tensorflow as tf
+from sea import Config
 import os
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -50,6 +51,7 @@ class TextCNN(object):
             self.embedded_chars_expanded = tf.expand_dims(self.embedded_chars, -1)
 
         pooled_outputs = []
+        attention_outpus = []
         for i, filter_size in enumerate(self._filter_sizes):
             with tf.name_scope("conv-maxpool-%s" % filter_size):
                 # Convolution Layer
@@ -65,20 +67,42 @@ class TextCNN(object):
                 # Apply nonlinearity
                 # h1 = tf.layers.batch_normalization(tf.nn.bias_add(conv, b), training=)
                 h = tf.nn.relu(tf.nn.bias_add(conv, b), name="relu")
-                # Maxpooling over the outputs
-                pooled = tf.nn.max_pool(
-                    h,
-                    ksize=[1, self._sequence_length - filter_size + 1, 1, 1],
-                    strides=[1, 1, 1, 1],
-                    padding='VALID',
-                    name="pool")
-                pooled_outputs.append(pooled)
+                #print(h.get_shape())
+                if Config._use_attention:
+                    h_shape = h.get_shape()
+                    h_ = tf.reshape(h, [-1,h_shape[1].value, h_shape[3].value])
+
+                    attention_w = tf.Variable(tf.truncated_normal(shape=[h_shape[3].value, h_shape[3].value]), name="attention_w")
+                    attention_w_ = tf.Variable(tf.truncated_normal(shape=[h_shape[3].value]))
+                    middle = tf.tanh(tf.einsum('aij,jk->aik', h_, attention_w))
+                    middle_ = tf.nn.softmax(tf.einsum('aij,j->ai', middle, attention_w_))
+                    attention = tf.einsum('aij,ai->aj', h_, middle_)
+                    #print("attention {}".format(attention.get_shape()))
+
+                    attention_outpus.append(attention)
+                else:
+
+                    # Maxpooling over the outputs
+                    pooled = tf.nn.max_pool(
+                        h,
+                        ksize=[1, self._sequence_length - filter_size + 1, 1, 1],
+                        strides=[1, 1, 1, 1],
+                        padding='VALID',
+                        name="pool")
+                    print("pooled shape is {}".format(pooled.get_shape()))
+                    pooled_outputs.append(pooled)
 
         # Combine all the pooled features
-        num_filters_total = self._num_filters * len(self._filter_sizes)
-        h_pool = tf.concat(pooled_outputs, 3)
-        h_pool_flat = tf.reshape(h_pool, [-1, num_filters_total])
-        self.h_drop = tf.nn.dropout(h_pool_flat, self._keep_prob)
+        if Config._use_attention:
+            attention_flat = tf.concat(attention_outpus, 1)
+            self.h_drop = tf.nn.dropout(attention_flat, self._keep_prob)
+
+        else:
+
+            num_filters_total = self._num_filters * len(self._filter_sizes)
+            h_pool = tf.concat(pooled_outputs, 3)
+            h_pool_flat = tf.reshape(h_pool, [-1, num_filters_total])
+            self.h_drop = tf.nn.dropout(h_pool_flat, self._keep_prob)
 
         # create output
         with tf.name_scope("output"):

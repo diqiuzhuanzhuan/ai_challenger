@@ -92,6 +92,7 @@ class LookMan(object):
 class Config(object):
     _use_lemma = True
     _use_cudnngru = False
+    _use_attention = False
 
 
 class Data(object):
