@@ -25,7 +25,7 @@ tf.flags.DEFINE_integer("labels_num", 20, "class num of task")
 tf.flags.DEFINE_integer("output_dimension", 4, "output dimension")
 tf.flags.DEFINE_boolean("use_lemma", False, "if use lemma or not")
 
-tf.flags.DEFINE_integer("step_bypass_validation", 40000, "how many steps was run before we start to run the first validation?")
+tf.flags.DEFINE_integer("step_bypass_validation", 70000, "how many steps was run before we start to run the first validation?")
 tf.flags.DEFINE_integer("step_validation", 3000, "validation run every many steps")
 tf.flags.DEFINE_integer("num_epochs", 500, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("batch_size", 64, "batch_size")
@@ -194,4 +194,5 @@ def main(is_test=False):
 
 
 if __name__ == "__main__":
+    Config._use_attention = True
     main(False)
