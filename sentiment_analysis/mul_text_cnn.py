@@ -88,7 +88,7 @@ class TextCNN(object):
                         ksize=[1, self._sequence_length - filter_size + 1, 1, 1],
                         strides=[1, 1, 1, 1],
                         padding='VALID',
-                        name="pool")
+                        name="max_pool")
                     print("pooled shape is {}".format(pooled.get_shape()))
                     pooled_outputs.append(pooled)
 
@@ -96,7 +96,7 @@ class TextCNN(object):
                     pooled = tf.nn.avg_pool(h, ksize=[1, self._sequence_length - filter_size +1, 1, 1],
                                             strides=[1, 1, 1, 1],
                                             padding='VALID',
-                                            name='pool')
+                                            name='average_pool')
 
                     pooled_outputs.append(pooled)
 
