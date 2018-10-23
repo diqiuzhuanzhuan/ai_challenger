@@ -253,7 +253,7 @@ class Data(object):
 
                 yield ids, [len(ids)], [0] * self._labels_num
 
-    def _get_validation_data(self):
+    def _gen_validation_data(self):
         file_names = DataFiles._validation_file_names
         yield from self._get_has_label_data(file_names)
 
@@ -283,7 +283,7 @@ class Data(object):
         self._train_iterator = tf.data.Iterator.from_structure(train_dataset.output_types, train_dataset.output_shapes)
         self._train_iterator_initializer = self._train_iterator.make_initializer(train_dataset)
 
-        validation_dataset = tf.data.Dataset.from_generator(self._gen_train_data, (tf.int32, tf.int32, tf.int32), ([None], [None], [self._labels_num]))
+        validation_dataset = tf.data.Dataset.from_generator(self._gen_validation_data, (tf.int32, tf.int32, tf.int32), ([None], [None], [self._labels_num]))
         validation_dataset = validation_dataset.map(lambda *x: (self.__truncate_sentence(x[0]), x[1], x[2])) \
             .padded_batch(self._batch_size, padded_shapes=([self._max_length], [None], [self._labels_num]),
                           padding_values=(tf.constant(1, dtype=tf.int32), tf.constant(0, dtype=tf.int32), tf.constant(0, dtype=tf.int32)))
