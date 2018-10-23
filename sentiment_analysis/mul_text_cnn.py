@@ -80,7 +80,7 @@ class TextCNN(object):
                     #print("attention {}".format(attention.get_shape()))
 
                     attention_outpus.append(attention)
-                else:
+                elif Config._use_average_pool:
 
                     # Maxpooling over the outputs
                     pooled = tf.nn.max_pool(
@@ -92,13 +92,21 @@ class TextCNN(object):
                     print("pooled shape is {}".format(pooled.get_shape()))
                     pooled_outputs.append(pooled)
 
+                else:
+                    pooled = tf.nn.avg_pool(h, ksize=[1, self._sequence_length - filter_sizes+1, 1, 1],
+                                            strides=[1, 1, 1, 1],
+                                            padding='VALID',
+                                            name='pool')
+
+                    pooled_outputs.append(pooled)
+
+
         # Combine all the pooled features
         if Config._use_attention:
             attention_flat = tf.concat(attention_outpus, 1)
             self.h_drop = tf.nn.dropout(attention_flat, self._keep_prob)
 
         else:
-
             num_filters_total = self._num_filters * len(self._filter_sizes)
             h_pool = tf.concat(pooled_outputs, 3)
             h_pool_flat = tf.reshape(h_pool, [-1, num_filters_total])

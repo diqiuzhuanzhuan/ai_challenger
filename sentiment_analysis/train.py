@@ -194,5 +194,5 @@ def main(is_test=False):
 
 
 if __name__ == "__main__":
-    Config._use_attention = True
+    Config._use_average_pool = True
     main(False)

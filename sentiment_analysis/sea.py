@@ -93,6 +93,7 @@ class Config(object):
     _use_lemma = True
     _use_cudnngru = False
     _use_attention = False
+    _use_average_pool = False
 
 
 class Data(object):
