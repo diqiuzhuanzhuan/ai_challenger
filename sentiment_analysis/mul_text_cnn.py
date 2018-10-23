@@ -85,7 +85,7 @@ class TextCNN(object):
                     # Maxpooling over the outputs
                     pooled = tf.nn.max_pool(
                         h,
-                        ksize=[1, self._sequence_length - filter_sizes + 1, 1, 1],
+                        ksize=[1, self._sequence_length - filter_size + 1, 1, 1],
                         strides=[1, 1, 1, 1],
                         padding='VALID',
                         name="pool")
@@ -93,7 +93,7 @@ class TextCNN(object):
                     pooled_outputs.append(pooled)
 
                 else:
-                    pooled = tf.nn.avg_pool(h, ksize=[1, self._sequence_length - filter_sizes+1, 1, 1],
+                    pooled = tf.nn.avg_pool(h, ksize=[1, self._sequence_length - filter_size +1, 1, 1],
                                             strides=[1, 1, 1, 1],
                                             padding='VALID',
                                             name='pool')
