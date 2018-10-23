@@ -83,22 +83,22 @@ class TextCNN(object):
                 elif Config._use_average_pool:
 
                     # Maxpooling over the outputs
-                    pooled = tf.nn.max_pool(
+                    avg_pooled = tf.nn.avg_pool(
                         h,
                         ksize=[1, self._sequence_length - filter_size + 1, 1, 1],
                         strides=[1, 1, 1, 1],
                         padding='VALID',
                         name="max_pool")
-                    print("pooled shape is {}".format(pooled.get_shape()))
-                    pooled_outputs.append(pooled)
+                    print("pooled shape is {}".format(avg_pooled.get_shape()))
+                    pooled_outputs.append(avg_pooled)
 
                 else:
-                    pooled = tf.nn.avg_pool(h, ksize=[1, self._sequence_length - filter_size +1, 1, 1],
+                    max_pooled = tf.nn.max_pool(h, ksize=[1, self._sequence_length - filter_size +1, 1, 1],
                                             strides=[1, 1, 1, 1],
                                             padding='VALID',
                                             name='average_pool')
 
-                    pooled_outputs.append(pooled)
+                    pooled_outputs.append(max_pooled)
 
 
         # Combine all the pooled features
