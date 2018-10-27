@@ -123,7 +123,7 @@ class MoonLight(object):
             self._summary_op = tf.summary.merge_all()
 
 
-tf.flags.DEFINE_integer("batch_size", 64, "batch_size")
+tf.flags.DEFINE_integer("batch_size", 32, "batch_size")
 tf.flags.DEFINE_integer("labels_num", 20, "class num of task")
 tf.flags.DEFINE_integer("output_dimension", 4, "output dimension")
 tf.flags.DEFINE_integer("num_epochs", 500, "Number of training epochs (default: 200)")
