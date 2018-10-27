@@ -11,6 +11,8 @@ import tensorflow as tf
 import os
 from sea import DataFiles, Data, Config
 from sklearn.metrics import f1_score
+import numpy as np
+from tensorflow.contrib import rnn
 
 os.environ['CUDA_VISIBLE_DEVICES']='1'
 
@@ -20,11 +22,8 @@ class MoonLight(object):
     _validation_file_names = DataFiles._validation_file_names
     _test_file_names = DataFiles._test_file_names
 
-    _batch_size = 64
     _table = None
-    _vocab_size = 0
 
-    _train_batch = None
 
     _embedding_dimension = 50
     _lstm_unit = 128
@@ -35,44 +34,31 @@ class MoonLight(object):
     _labels_num = 20
     _output_dimension = 4
 
-    def __init__(self, learning_rate=0.8, embedding_dimension=256):
-        self._embedding_dimension = embedding_dimension
+    def __init__(self, batch_size, learning_rate, embedding_size, vocab_size, weight, labes_num=20, output_dimension=4, next_element=None):
+        self._embedding_size = embedding_size
+        self._batch_size = batch_size
+        self._vocab_size = vocab_size
         self._keep_prob = tf.placeholder(dtype=tf.float32, name="keep_prob")
-        self._feature = tf.placeholder(dtype=tf.int64, shape=[None, None], name="feature")
-        self._feature_length = tf.placeholder(dtype=tf.int64, shape=[None, None], name="feature_length")
-        self._label = tf.placeholder(dtype=tf.int64, shape=[None, None, None], name="label")
         self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)
         self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
         self._batch_size = tf.placeholder(name="batch_size", shape=[], dtype=tf.int64)
-        self._learning_rate = tf.placeholder(name="learning_rate", dtype=tf.float32)
-        self._learning_rate = learning_rate
-        self._learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 1000, 0.96, staircase=True)
-        self._actual_batch_size = None
-        self._data = Data(self._batch_size)
-        self.weights = None
-        self.graph = tf.Graph()
-
-    def load_data(self):
-
-        self._train_iterator, self._train_iterator_initializer, self._validation_iterator, self._validation_iterator_initializer, self._test_iterator, self._test_iterator_initializer\
-                                                                                                                                                                = self._data.load_data()
-        self._validation_next = self._validation_iterator.get_next()
+        self._learning_rate = tf.train.exponential_decay(learning_rate, self.global_step, 1000, 0.96, staircase=True)
+        self.weight = weight
+        self._feature = next_element[0]
+        self._feature_length = next_element[1]
+        self._label = next_element[2]
         self._actual_batch_size = tf.shape(self._feature)[0]
-        self.weights = tf.constant(self._data.weights)
 
-    def _create_embedding(self):
         with tf.device("/cpu:0"), tf.name_scope("create_embedding"):
-            self._embedding_matrix = tf.get_variable(name="embedding_matrix", shape=[self._data.get_vocab_size(), self._embedding_dimension],
-                                              initializer=tf.variance_scaling_initializer)
-
+            self._embedding_matrix = tf.get_variable(name="embedding_matrix", shape=[self._vocab_size,
+                                                                                     self._embedding_dimension], initializer=tf.variance_scaling_initializer)
             self._embedding = tf.nn.embedding_lookup(self._embedding_matrix, self._feature, name="embedding")
 
-    def _create_bilstm(self):
-
         with tf.name_scope("create_bilstm"):
-            def lstm_cell(lstm_unit):
+
+            def lstm_cell(lstm_unit=256):
                 cell = tf.nn.rnn_cell.LSTMCell(num_units=lstm_unit)
-#            cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
+                cell = rnn.AttentionCellWrapper(cell=cell, attn_length=self._attention_length, state_is_tuple=True)
                 cell = tf.nn.rnn_cell.DropoutWrapper(cell=cell, input_keep_prob=self._keep_prob)
                 return cell
 
@@ -86,7 +72,6 @@ class MoonLight(object):
             self.s = self._sentence_encoder_output
             self._sentence_encoder_output = tf.concat(self._sentence_encoder_output, 2)
 
-    def _create_output(self):
         with tf.name_scope("create_output"):
             length = self._labels_num
             output_dimension = self._output_dimension
@@ -102,20 +87,17 @@ class MoonLight(object):
                 tf.layers.dense(inputs=self._logits[i], units=output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i*10, stddev=0.01, mean=0), activation=None)
                 for i in range(length)
             ]
-            self._predict = tf.stack(self._logits)
-            self._predict = tf.argmax(self._predict, axis=2)
-            self._predict = tf.one_hot(self._predict, depth=output_dimension, dtype=tf.int64)
-            self._predict = tf.transpose(self._predict, [1, 0, 2])
+            self.predict = tf.stack(self._logits)
+            self.predict = tf.argmax(self.predict, axis=2, name="predict")
 
-    def _create_loss(self):
+
         with tf.name_scope("create_loss"):
             length = self._labels_num
-            w = [tf.nn.embedding_lookup(self.weights[i], tf.argmax(self._label[:, i, :], axis=1), name="embedding_lookup"+str(i)) for i in range(length)]
+            w = [tf.nn.embedding_lookup(self.weight[i], tf.argmax(self._label[:, i, :], axis=1), name="embedding_lookup"+str(i)) for i in range(length)]
             self._loss_ = [tf.losses.softmax_cross_entropy(onehot_labels=self._label[:, i, :], logits=self._logits[i], weights=w[i]) for i in range(length)]
             self._loss = tf.stack(self._loss_)
             self._total_loss = tf.reduce_mean(self._loss, axis=0)
 
-    def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
             #self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate).minimize(self._loss, global_step=self.global_step)
             self._optimizer = tf.train.AdadeltaOptimizer(learning_rate=self._learning_rate)
@@ -124,154 +106,173 @@ class MoonLight(object):
             self._train_total = self._optimizer.apply_gradients(self._grads_total, global_step=self.global_step)
             self._train_distribution = [self._optimizer.apply_gradients(self._grads_distribution[i], global_step=self.global_step) for i in range(self._labels_num)]
 
-    def _create_summary(self):
         with tf.name_scope("summary"):
+            grad_summaries = []
+            for g, v in self._grads_total:
+                if g is not None:
+                    grad_hist_summary = tf.summary.histogram("{}/grad/hist".format(v.name), g)
+                    sparsity_summary = tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
+                    grad_summaries.append(grad_hist_summary)
+                    grad_summaries.append(sparsity_summary)
+
+            tf.summary.scalar('learning_rate', self._learning_rate)
             tf.summary.scalar('loss', self._total_loss)
-            [tf.summary.scalar('loss ['+str(i)+']', self._loss_[i]) for i in range(self._labels_num)]
-            [tf.summary.histogram('histogram loss[' +str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
+            [tf.summary.scalar('loss [t' + str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
+            [tf.summary.histogram('histogram loss[' + str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
             tf.summary.histogram('histogram loss', self._total_loss)
             self._summary_op = tf.summary.merge_all()
 
-    def build(self):
-        self.load_data()
-        self._create_embedding()
-        self._create_bilstm()
-        self._create_output()
-        self._create_loss()
-        self._create_optimizer()
-        self._create_summary()
 
-    def validation(self, sess):
-        f1 = 0
-        samples = 0
-        sess.run(self._validation_iterator_initializer, feed_dict={self._batch_size: 512})
-        all_lab = []
-        all_res = []
-        print("对验证集进行验证....")
-        while True:
-            try:
-                delta_t = time.time()
-                feature, len, label = sess.run(self._validation_next)
-                predict, actual_batch_size, lab, res = sess.run(
-                    [self._predict, self._actual_batch_size, tf.argmax(label, axis=2) - 2, tf.argmax(self._predict, axis=2) - 2],
-                    feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
-                )
+tf.flags.DEFINE_integer("batch_size", 64, "batch_size")
+tf.flags.DEFINE_integer("labels_num", 20, "class num of task")
+tf.flags.DEFINE_integer("output_dimension", 4, "output dimension")
+tf.flags.DEFINE_integer("num_epochs", 500, "Number of training epochs (default: 200)")
 
-                all_lab.extend(lab)
-                all_res.extend(res)
-                samples += actual_batch_size
-                delta_t = time.time() - delta_t
-                print("cost time {} sec".format(delta_t))
-            except tf.errors.OutOfRangeError:
-                print("正在计算f1 score, 请稍等")
-                for l1, l2 in zip(all_res, all_lab):
-                    f1 += f1_score(l2, l1, average="macro")
-                average_f1 = f1 / samples
-                print("验证集运行完毕，平均f1为: {}".format(average_f1))
-                break
+tf.flags.DEFINE_integer("step_bypass_validation", 3000, "how many steps was run before we start to run the first validation?")
+tf.flags.DEFINE_integer("step_validation", 3000, "validation run every many steps")
 
-    def train(self, epoches=10):
-        if not os.path.exists("checkpoint"):
-            os.mkdir("checkpoint")
+tf.flags.DEFINE_string("summary_path", "./graphs/", "summary path")
+tf.flags.DEFINE_string("checkpoint_path", "./checkpoint/moon/", "Checkpoint file path for saving")
 
-        self.build()
-        saver = tf.train.Saver(sharded=True)
-        with tf.Session() as sess:
-            ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
-            if ckpt and ckpt.model_checkpoint_path:
-                print("正在从{}加载模型".format(ckpt.model_checkpoint_path))
-                saver.restore(sess, ckpt.model_checkpoint_path)
-            else:
-                sess.run(tf.global_variables_initializer())
-            writer = tf.summary.FileWriter('graphs/ai_challenger/learning_rate' + str(self._learning_rate), self.graph)
-            initial_step = self.global_step.eval()
-            print("initial_step is {}".format(initial_step))
-            total_loss = 0.0
-            iteration = 0
-            train_next = self._train_iterator.get_next()
-            max_loss_indice = None
-            global_step = initial_step
+tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
+tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
+
+FLAGS = tf.flags.FLAGS
+
+
+def load_data():
+    data = Data(batch_size=FLAGS.batch_size)
+    data.load_data()
+    return data
+
+
+def main():
+    tf.reset_default_graph()
+    data = load_data()
+    vocab_size = data.get_vocab_size()
+    weight = data.weights
+    train_iterator_initializer = data._train_iterator_initializer
+    validation_iterator_initializer = data._validation_iterator_initializer
+    test_iterator_initializer = data._test_iterator_initializer
+    handle = data.handle
+    next_element = data.next_element
+
+    model = MoonLight(batch_size=64, learning_rate=0.8, embedding_size=256, vocab_size=vocab_size, weight=weight, labes_num=FLAGS.labels_num,
+                      output_dimension=FLAGS.output_dimension, next_element=next_element)
+
+    session_conf = tf.ConfigProto(
+        allow_soft_placement=FLAGS.allow_soft_placement,
+        log_device_placement=FLAGS.log_device_placement)
+    sess = tf.Session(config=session_conf)
+    with sess.as_default():
+        writer = tf.summary.FileWriter('graphs/text_cnn/learning_rate' + str(model._learning_rate))
+        if not os.path.exists(FLAGS.checkpoint_path):
+            os.makedirs(FLAGS.checkpoint_path)
+        checkpoints_prefix = os.path.join(FLAGS.checkpoint_path, "bilstm")
+        saver = tf.train.Saver()
+        sess.run(tf.global_variables_initializer())
+
+        train_handle = sess.run(data._train_iterator.string_handle())
+        validation_handle = sess.run(data._validation_iterator.string_handle())
+        test_handle = sess.run(data._test_iterator.string_handle())
+
+        ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_path)
+        if ckpt and ckpt.model_checkpoint_path:
+            print("正在从{}加载模型".format(ckpt.model_checkpoint_path))
+            saver.restore(sess, ckpt.model_checkpoint_path)
+
+        def validation_step():
+            feed_dict = {
+                model._keep_prob: 1.0, handle: validation_handle
+            }
+
+            loss, actual_batch_size, lab, res = sess.run(
+                [model._total_loss, model._actual_batch_size, tf.argmax(model._label, axis=2) - 2, model.predict - 2],
+                feed_dict=feed_dict
+            )
+            return loss, actual_batch_size, lab, res
+
+        def validation():
+            f1 = 0
+            samples = 0
+            total_validation_loss = 0
             total_time = 0
-            for i in range(initial_step, initial_step+epoches):
-                sess.run(self._train_iterator_initializer, feed_dict={self._batch_size: 32})
-                while True:
-                    try:
-                        delta_t = time.time()
-                        feature, len, label = sess.run(train_next)
-                        if global_step < 10000 or not max_loss_indice:
-                            _, loss, summary, global_step = sess.run(
-                                [self._train_total, self._total_loss, self._summary_op, self.global_step],
-                                feed_dict={
-                                    self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label
-                                }
-                            )
-                        else:
-                            _, _, loss, summary, max_loss_indice, global_step = sess.run(
-                                [self._train_distribution[max_loss_indice], self._train_total, self._total_loss, self._summary_op, tf.argmax(self._loss, axis=0), self.global_step],
-                                feed_dict={
-                                    self._keep_prob: 0.7, self._feature: feature, self._feature_length: len, self._label: label
-                                }
-
-                            )
-                        total_loss += loss
-                        iteration = iteration + 1
-                        average_loss = total_loss/iteration
-                        writer.add_summary(summary, global_step=global_step)
-                        total_time += time.time() - delta_t
-                        print("iteration is {}, current_loss is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, loss, average_loss, total_time, total_time/iteration))
-                        if iteration % 1000 == 0:
-                            saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
-                            self.validation(sess)
-                        if global_step % 30000 == 0:
-                            self._test(sess, global_step)
-
-                    except tf.errors.OutOfRangeError:
-                        saver.save(sess, save_path="checkpoint/moon", global_step=self.global_step)
-                        break
-
-    def _test(self, sess, global_step):
-        test_next = self._test_iterator.get_next()
-        sess.run(self._test_iterator_initializer, feed_dict={self._batch_size: 256})
-        while True:
-            try:
-                feature, len, label = sess.run(test_next)
-                res = sess.run(
-                    tf.argmax(self._predict, axis=2, output_type=tf.int64)-2,
-                    feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
-                )
-                self._data.feed_output(res)
-
-            except tf.errors.OutOfRangeError:
-                break
-        self._data.persist("result_{}.csv".format(global_step))
-
-    def test(self):
-        self.build()
-        saver = tf.train.Saver(sharded=True)
-        with tf.Session() as sess:
-            ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
-            if ckpt and ckpt.model_checkpoint_path:
-                saver.restore(sess, ckpt.model_checkpoint_path)
-            else:
-                print("no model!")
-                exit(0)
-            test_next = self._test_iterator.get_next()
-            sess.run(self._test_iterator_initializer, feed_dict={self._batch_size: 256})
+            sess.run(validation_iterator_initializer)
+            iteration = 0
             while True:
                 try:
-                    feature, len, label = sess.run(test_next)
-                    predict = sess.run(
-                        self._predict, feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
-                    )
-                    res = sess.run(tf.argmax(predict, axis=2, output_type=tf.int64) - 2)
-                    self._data.feed_output(res)
+                    t1 = time.time()
+                    loss, actual_batch_size, lab, res = validation_step()
+                    f1 += np.sum(list(map(lambda x: f1_score(x[0], x[1], average="macro"), zip(lab.tolist(), res.tolist()))))
+                    samples += actual_batch_size
+                    iteration += 1
+                    total_validation_loss += loss
+                    delta_t = time.time() - t1
+                    total_time += delta_t
+                    print("当前f1为:{}, loss 为{}, 花费{}秒".format(f1 / samples, loss, delta_t))
+
+                except tf.errors.OutOfRangeError:
+                    print("平均f1为:{}, 平均loss为{}, 总耗时{}秒".format(f1 / samples, total_validation_loss / iteration, total_time))
+                    break
+            return f1 / samples
+
+        def test_step(test_handle):
+            feed_dict = {
+                model._keep_prob: 1.0, handle: test_handle
+            }
+            res = sess.run(
+                model.predict - 2,
+                feed_dict=feed_dict
+            )
+            data.feed_output(res)
+
+        def test():
+            global_step = sess.run(model.global_step)
+            sess.run(test_iterator_initializer)
+            while True:
+                try:
+                    test_step(test_handle)
+                except tf.errors.OutOfRangeError:
+                    data.persist(filename="result_{}.csv".format(global_step))
+                    print("测试结果已经保存, result_{}.csv".format(global_step))
+                    break
+
+        def train_step():
+            feed_dict = {
+                model._keep_prob: 1.0, handle: train_handle
+            }
+            _, loss, global_step, summary_op, actual_batch_size = sess.run(
+                [model._train_total, model._total_loss, model.global_step, model._summary_op, model._actual_batch_size],
+                feed_dict=feed_dict
+            )
+            writer.add_summary(summary_op, global_step=global_step)
+            return loss, global_step, actual_batch_size
+
+        def train():
+            while True:
+                try:
+                    t1 = time.time()
+                    loss, step, actual_batch_size = train_step()
+                    delta_t = time.time() - t1
+                    print("training: step is {}, loss is {}, cost {} 秒".format(step, loss, delta_t))
+                    if step > FLAGS.step_bypass_validation and step % FLAGS.step_validation == 0:
+                        saver.save(sess, save_path=checkpoints_prefix, global_step=step)
+                        average_f1 = validation()
+                        if average_f1 > 0.68:
+                            test()
+
+                    if step % FLAGS.step_validation == 0:
+                        saver.save(sess, save_path=checkpoints_prefix, global_step=step)
 
                 except tf.errors.OutOfRangeError:
                     break
-            self._data.persist()
+
+        for i in range(FLAGS.num_epochs):
+            sess.run(train_iterator_initializer)
+            print("第{}个epoch".format(i))
+            train()
 
 
 if __name__ == "__main__":
     Config._use_lemma = False
-    ml = MoonLight()
-    ml.train(50000)
+    main()
