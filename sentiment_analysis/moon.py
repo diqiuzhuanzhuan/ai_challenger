@@ -88,8 +88,8 @@ class MoonLight(object):
                 for i in range(length)
             ]
             self.predict = tf.stack(self._logits)
-            self.predict = tf.argmax(self.predict, axis=2, name="predict")
-
+            self.predict = tf.argmax(self.predict, axis=2)
+            self.predict = tf.transpose(self.predict, [1, 0], name="predict")
 
         with tf.name_scope("create_loss"):
             length = self._labels_num
@@ -128,7 +128,7 @@ tf.flags.DEFINE_integer("labels_num", 20, "class num of task")
 tf.flags.DEFINE_integer("output_dimension", 4, "output dimension")
 tf.flags.DEFINE_integer("num_epochs", 500, "Number of training epochs (default: 200)")
 
-tf.flags.DEFINE_integer("step_bypass_validation", 3000, "how many steps was run before we start to run the first validation?")
+tf.flags.DEFINE_integer("step_bypass_validation", 2000, "how many steps was run before we start to run the first validation?")
 tf.flags.DEFINE_integer("step_validation", 3000, "validation run every many steps")
 
 tf.flags.DEFINE_string("summary_path", "./graphs/", "summary path")
@@ -203,6 +203,7 @@ def main():
                 try:
                     t1 = time.time()
                     loss, actual_batch_size, lab, res = validation_step()
+                    print(lab, res)
                     f1 += np.sum(list(map(lambda x: f1_score(x[0], x[1], average="macro"), zip(lab.tolist(), res.tolist()))))
                     samples += actual_batch_size
                     iteration += 1
