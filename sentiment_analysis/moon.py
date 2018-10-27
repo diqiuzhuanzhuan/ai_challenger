@@ -14,7 +14,7 @@ from sklearn.metrics import f1_score
 import numpy as np
 from tensorflow.contrib import rnn
 
-os.environ['CUDA_VISIBLE_DEVICES']='1'
+os.environ['CUDA_VISIBLE_DEVICES']='0, 1'
 
 
 class MoonLight(object):
@@ -165,7 +165,7 @@ def main():
         log_device_placement=FLAGS.log_device_placement)
     sess = tf.Session(config=session_conf)
     with sess.as_default():
-        writer = tf.summary.FileWriter('graphs/text_cnn/learning_rate' + str(model._learning_rate))
+        writer = tf.summary.FileWriter('graphs/bilstm/learning_rate' + str(model._learning_rate))
         if not os.path.exists(FLAGS.checkpoint_path):
             os.makedirs(FLAGS.checkpoint_path)
         checkpoints_prefix = os.path.join(FLAGS.checkpoint_path, "bilstm")
