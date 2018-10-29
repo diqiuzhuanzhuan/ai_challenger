@@ -203,7 +203,6 @@ def main():
                 try:
                     t1 = time.time()
                     loss, actual_batch_size, lab, res = validation_step()
-                    print(lab, res)
                     f1 += np.sum(list(map(lambda x: f1_score(x[0], x[1], average="macro"), zip(lab.tolist(), res.tolist()))))
                     samples += actual_batch_size
                     iteration += 1
