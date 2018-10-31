@@ -136,7 +136,7 @@ class TextCNN(object):
             self._total_loss = tf.reduce_mean(total_loss, axis=0)
 
         with tf.name_scope("create_optimizer"):
-            optimizer = tf.train.AdadeltaOptimizer(learning_rate=self._train_learning_rate)
+            optimizer = tf.train.AdamOptimizer(learning_rate=self._train_learning_rate)
             self._grads_total = optimizer.compute_gradients(self._total_loss)
             self._grads_distribution = [optimizer.compute_gradients(self._loss_[i]) for i in range(self._labels_num)]
             self._train_total = optimizer.apply_gradients(self._grads_total, global_step=self.global_step)
