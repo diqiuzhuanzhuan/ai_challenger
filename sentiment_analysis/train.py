@@ -17,7 +17,7 @@ from mul_text_cnn import TextCNN
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 tf.flags.DEFINE_integer("embedding_size", 256, "Dimensionality of character embedding (default: 256)")
-tf.flags.DEFINE_string("filter_sizes", "2", "Comma-separated filter sizes (default: '3,4,5')")
+tf.flags.DEFINE_string("filter_sizes", "1, 2", "Comma-separated filter sizes (default: '3,4,5')")
 tf.flags.DEFINE_integer("num_filters", 512, "Number of filters per filter size (default: 256)")
 tf.flags.DEFINE_float("dropout_keep_prob", 1.0, "Dropout keep probability (default: 1.0)")
 tf.flags.DEFINE_integer("max_length", 3000, "Max length of sentence")
@@ -144,13 +144,15 @@ def main(is_test=False):
                 )
                 return loss, actual_batch_size, lab, res
 
-            def train():
+            def train(total_loss, batches):
                 while True:
                     try:
                         t1 = time.time()
                         loss, step, actual_batch_size = train_step()
+                        total_loss += loss
+                        batches += 1
                         delta_t = time.time() - t1
-                        print("training: step is {}, loss is {}, cost {} 秒".format(step, loss, delta_t))
+                        print("training: step is {}, loss is {}, average_loss is {}, cost {} 秒".format(step, loss, total_loss/batches, delta_t))
                         if step > FLAGS.step_bypass_validation and step % FLAGS.step_validation == 0:
                             saver.save(sess, save_path=checkpoints_prefix, global_step=step)
                             average_f1 = validation()
@@ -162,6 +164,7 @@ def main(is_test=False):
 
                     except tf.errors.OutOfRangeError:
                         break
+                return total_loss, batches
 
             def validation():
                 f1 = 0
@@ -186,11 +189,12 @@ def main(is_test=False):
                         print("平均f1为:{}, 平均loss为{}, 总耗时{}秒".format(f1/samples, total_validation_loss/iteration, total_time))
                         break
                 return f1/samples
-
+            total_loss = 0
+            batches = 0
             for i in range(FLAGS.num_epochs):
                 sess.run(train_iterator_initializer)
                 print("第{}个epoch".format(i))
-                train()
+                total_loss, batches = train(total_loss, batches)
 
 
 if __name__ == "__main__":
