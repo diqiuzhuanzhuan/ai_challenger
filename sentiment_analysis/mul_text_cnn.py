@@ -75,7 +75,7 @@ class TextCNN(object):
                     attention_w = tf.Variable(tf.truncated_normal(shape=[h_shape[3].value, h_shape[3].value]), name="attention_w")
                     attention_w_ = tf.Variable(tf.truncated_normal(shape=[h_shape[3].value]))
                     middle = tf.tanh(tf.einsum('aij,jk->aik', h_, attention_w))
-                    middle_ = tf.nn.softmax(tf.einsum('aij,j->ai', middle, attention_w_))
+                    middle_ = tf.nn.softmax(tf.einsum('aij,j->ai', middle, attention_w_)/tf.sqrt(tf.to_float(h_shape[3].value)))
                     attention = tf.einsum('aij,ai->aj', h_, middle_)
                     #print("attention {}".format(attention.get_shape()))
 
