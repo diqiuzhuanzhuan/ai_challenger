@@ -12,7 +12,7 @@ import numpy as np
 import time
 from sea import Data, Config
 from sklearn.metrics import f1_score
-from mul_text_cnn import TextCNN
+from text_cnn import TextCNN
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0, 1'
 

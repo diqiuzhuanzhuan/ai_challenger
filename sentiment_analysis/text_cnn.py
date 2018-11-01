@@ -6,66 +6,52 @@ email: diqiuzhuanzhuan@gmail.com
 
 """
 
+
+
 import tensorflow as tf
-from sea import DataFiles, Data, Config
-import time
+from sea import Config
 import os
-from sklearn.metrics import f1_score
-import numpy as np
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 
 class TextCNN(object):
-    """
-    A CNN for text classification.
-    Uses an embedding layer, followed by a convolutional, max-pooling and softmax layer.
-    """
 
-    def __init__(
-            self, sequence_length, filter_sizes, num_filters, batch_size=64, l2_reg_lambda=0.0, embedding_size=300):
+    def __init__(self, batch_size, learning_rate, embedding_size, vocab_size, sequence_length, num_filters, filter_sizes, weight, labes_num=20, output_dimension=4, next_element=None):
+        self._sequence_length = sequence_length
+        self._num_filters = num_filters
+        self._filter_sizes = filter_sizes
+        self._batch_size = batch_size
+        self._learning_rate = learning_rate
+        self._embedding_size = embedding_size
+        self._vocab_size = vocab_size
+        self._labels_num = labes_num
+        self._output_dimension = output_dimension
+        self.weights = weight
 
-        self.graph = tf.Graph()
-        with self.graph.as_default():
-            self._embedding_size = embedding_size
-            self._batch_size = tf.placeholder(dtype=tf.int64, name="batch_size")
-        # Placeholders for input, output and dropout
-            self._feature = tf.placeholder(tf.int64, [None, sequence_length], name="feature")
-            self._label = tf.placeholder(dtype=tf.int64, shape=[None, None, None], name="label")
-            self._feature_length = tf.placeholder(dtype=tf.int64, shape=[None, None], name="feature_length")
-            self._keep_prob = tf.placeholder(tf.float32, name="keep_prob")
-            self._num_filters = num_filters
-            self._sequence_length = sequence_length
-            self._batch_size = batch_size
-            self._data = Data(self._batch_size, max_length=self._sequence_length)
-            self._filter_sizes = filter_sizes
-            self._l2_reg_lambda = l2_reg_lambda
-            self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)
-            self._batch_normalization_trainable = tf.placeholder(tf.bool, name="batch_normalization_trainable")
-
-            self._labels_num = 20
-            self._output_dimension = 4
-            self._learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 3000, 0.96, staircase=True)
-            self._checkpoint_path = os.path.dirname('checkpoint/checkpoint')
-
-    def _load_data(self):
-        self._train_iterator, self._train_iterator_initializer, self._validation_iterator, self._validation_iterator_initializer, self._test_iterator, self._test_iterator_initializer \
-            = self._data.load_data()
-        self._validation_next = self._validation_iterator.get_next()
+        self._feature = next_element[0]
+        self._feature_length = next_element[1]
+        self._label = next_element[2]
         self._actual_batch_size = tf.shape(self._feature)[0]
-        self.weights = tf.constant(self._data.weights)
 
-    def _create_embedding(self):
-        # Embedding layer
+        self._keep_prob = tf.placeholder(tf.float32, name="keep_prob")
+
+        # global_step
+        self.global_step = tf.get_variable("global_step", initializer=tf.constant(0), trainable=False)
+
+        # decay learning
+        self._train_learning_rate = tf.train.exponential_decay(1e-1, self.global_step, 3000, 0.96, staircase=True)
+
+        # embedding layer
         with tf.device('/cpu:0'), tf.name_scope("embedding"):
             self.W = tf.Variable(
-                tf.random_uniform([self._data.get_vocab_size(), self._embedding_size], -1.0, 1.0),
+                tf.random_uniform([self._vocab_size, self._embedding_size], -1.0, 1.0),
                 name="W")
             self.embedded_chars = tf.nn.embedding_lookup(self.W, self._feature)
             self.embedded_chars_expanded = tf.expand_dims(self.embedded_chars, -1)
 
-    def _create_convolution(self):
         pooled_outputs = []
+        attention_outpus = []
         for i, filter_size in enumerate(self._filter_sizes):
             with tf.name_scope("conv-maxpool-%s" % filter_size):
                 # Convolution Layer
@@ -81,57 +67,81 @@ class TextCNN(object):
                 # Apply nonlinearity
                 # h1 = tf.layers.batch_normalization(tf.nn.bias_add(conv, b), training=)
                 h = tf.nn.relu(tf.nn.bias_add(conv, b), name="relu")
-                # Maxpooling over the outputs
-                pooled = tf.nn.max_pool(
-                    h,
-                    ksize=[1, self._sequence_length - filter_size + 1, 1, 1],
-                    strides=[1, 1, 1, 1],
-                    padding='VALID',
-                    name="pool")
-                pooled_outputs.append(pooled)
+                #print(h.get_shape())
+                if Config._use_attention:
+                    h_shape = h.get_shape()
+                    h_ = tf.reshape(h, [-1,h_shape[1].value, h_shape[3].value])
+
+                    attention_w = tf.Variable(tf.truncated_normal(shape=[h_shape[3].value, h_shape[3].value]), name="attention_w")
+                    attention_w_ = tf.Variable(tf.truncated_normal(shape=[h_shape[3].value]))
+                    middle = tf.tanh(tf.einsum('aij,jk->aik', h_, attention_w))
+                    middle_ = tf.nn.softmax(tf.einsum('aij,j->ai', middle, attention_w_)/tf.sqrt(tf.to_float(h_shape[3].value)))
+                    attention = tf.einsum('aij,ai->aj', h_, middle_)
+                    #print("attention {}".format(attention.get_shape()))
+
+                    attention_outpus.append(attention)
+                elif Config._use_average_pool:
+
+                    # Maxpooling over the outputs
+                    avg_pooled = tf.nn.avg_pool(
+                        h,
+                        ksize=[1, self._sequence_length - filter_size + 1, 1, 1],
+                        strides=[1, 1, 1, 1],
+                        padding='VALID',
+                        name="average_pool")
+                    print("pooled shape is {}".format(avg_pooled.get_shape()))
+                    pooled_outputs.append(avg_pooled)
+
+                else:
+                    max_pooled = tf.nn.max_pool(h, ksize=[1, self._sequence_length - filter_size +1, 1, 1],
+                                            strides=[1, 1, 1, 1],
+                                            padding='VALID',
+                                            name='max_pool')
+
+                    pooled_outputs.append(max_pooled)
+
 
         # Combine all the pooled features
-        num_filters_total = self._num_filters * len(self._filter_sizes)
-        self.h_pool = tf.concat(pooled_outputs, 3)
-        self.h_pool_flat = tf.reshape(self.h_pool, [-1, num_filters_total])
-        self.h_drop = tf.nn.dropout(self.h_pool_flat, self._keep_prob)
+        if Config._use_attention:
+            attention_flat = tf.concat(attention_outpus, 1)
+            self.h_drop = tf.nn.dropout(attention_flat, self._keep_prob)
 
-    def _create_output(self):
+        else:
+            num_filters_total = self._num_filters * len(self._filter_sizes)
+            h_pool = tf.concat(pooled_outputs, 3)
+            h_pool_flat = tf.reshape(h_pool, [-1, num_filters_total])
+            self.h_drop = tf.nn.dropout(h_pool_flat, self._keep_prob)
+
+        # create output
         with tf.name_scope("output"):
-            self._input = tf.layers.dense(inputs=self.h_drop, units=256, kernel_initializer=tf.truncated_normal_initializer(stddev=0.1), activation=tf.nn.relu)
-            self.__logits = [
-                tf.layers.dense(inputs=self._input, units=128, kernel_initializer=tf.truncated_normal_initializer(seed=i, stddev=0.1), activation=tf.nn.relu)
-                for i in range(self._labels_num)
-            ]
+            def my_dense(inputs, units, activation):
+                return tf.contrib.layers.fully_connected(inputs, units, activation)
 
-            self._logits = [
-                tf.layers.dense(inputs=self.__logits[i], units=self._output_dimension, kernel_initializer=tf.truncated_normal_initializer(seed=i * 10, stddev=0.1), activation=None)
-                for i in range(self._labels_num)
-            ]
-            # self._predict = tf.stack([tf.nn.softmax(logits=self._logits[i], name="softmax" + str(i)) for i in range(self._labels_num)])
-            self._predict = tf.argmax(tf.stack(self._logits), axis=2)
-            self._predict_argmax = tf.transpose(self._predict, [1, 0])
-            self._predict = tf.one_hot(self._predict, depth=self._output_dimension, dtype=tf.int64)
-            self._predict = tf.transpose(self._predict, [1, 0, 2])
+            input_1_layer = my_dense(self.h_drop, 256, tf.nn.relu)
 
-    def _create_loss(self):
+            input_2_layer = [my_dense(input_1_layer, units=128, activation=tf.nn.relu) for _ in range(self._labels_num)]
+
+            input_3_layer = [my_dense(inputs=input_2_layer[i], units=self._output_dimension, activation=None) for i in range(self._labels_num)]
+            self.logits = input_3_layer
+
+            predict = tf.argmax(tf.stack(input_3_layer), axis=2)
+
+            self.predict = tf.transpose(predict, [1, 0], name="predict")
+
         with tf.name_scope("create_loss"):
             length = self._labels_num
             w = [tf.nn.embedding_lookup(self.weights[i], tf.argmax(self._label[:, i, :], axis=1), name="embedding_lookup" + str(i)) for i in range(length)]
-            self._loss_ = [tf.losses.softmax_cross_entropy(onehot_labels=self._label[:, i, :], logits=self._logits[i], weights=w[i]) for i in range(length)]
-            self._loss = tf.stack(self._loss_)
-            self._total_loss = tf.reduce_mean(self._loss, axis=0)
+            self._loss_ = [tf.losses.softmax_cross_entropy(onehot_labels=self._label[:, i, :], logits=self.logits[i], weights=w[i]) for i in range(length)]
+            total_loss = tf.stack(self._loss_)
+            self._total_loss = tf.reduce_mean(total_loss, axis=0)
 
-    def _create_optimizer(self):
         with tf.name_scope("create_optimizer"):
-            # self._optimizer = tf.train.AdamOptimizer(learning_rate=self._learning_rate)
-            self._optimizer = tf.train.AdadeltaOptimizer(learning_rate=self._learning_rate)
-            self._grads_total = self._optimizer.compute_gradients(self._total_loss)
-            self._grads_distribution = [self._optimizer.compute_gradients(self._loss_[i]) for i in range(self._labels_num)]
-            self._train_total = self._optimizer.apply_gradients(self._grads_total, global_step=self.global_step)
-            self._train_distribution = [self._optimizer.apply_gradients(self._grads_distribution[i], global_step=self.global_step) for i in range(self._labels_num)]
+            optimizer = tf.train.AdamOptimizer(learning_rate=self._train_learning_rate)
+            self._grads_total = optimizer.compute_gradients(self._total_loss)
+            self._grads_distribution = [optimizer.compute_gradients(self._loss_[i]) for i in range(self._labels_num)]
+            self._train_total = optimizer.apply_gradients(self._grads_total, global_step=self.global_step)
+            self._train_distribution = [optimizer.apply_gradients(self._grads_distribution[i], global_step=self.global_step) for i in range(self._labels_num)]
 
-    def _create_summary(self):
         with tf.name_scope("create_summary"):
             grad_summaries = []
             for g, v in self._grads_total:
@@ -141,165 +151,10 @@ class TextCNN(object):
                     grad_summaries.append(grad_hist_summary)
                     grad_summaries.append(sparsity_summary)
 
-            tf.summary.scalar('learning_rate', self._learning_rate)
+            tf.summary.scalar('learning_rate', self._train_learning_rate)
             tf.summary.scalar('loss', self._total_loss)
-            [tf.summary.scalar('loss [' + str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
+            [tf.summary.scalar('loss [t' + str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
             [tf.summary.histogram('histogram loss[' + str(i) + ']', self._loss_[i]) for i in range(self._labels_num)]
             tf.summary.histogram('histogram loss', self._total_loss)
             self._summary_op = tf.summary.merge_all()
 
-    def _build_graph(self):
-        self._create_embedding()
-        self._create_convolution()
-        self._create_output()
-        self._create_loss()
-        self._create_optimizer()
-        self._create_summary()
-
-    def build(self):
-        with self.graph.as_default():
-            self._load_data()
-            self._build_graph()
-
-    def validation(self, sess):
-        samples = 0
-        val_sess = tf.Session(graph=self.graph)
-        val_sess.run(self._validation_iterator_initializer)
-        print("正在对验证集进行验证, 请稍等....")
-        iteration = 0
-        total_loss = 0
-        f1 = 0
-        total_time = 0
-        while True:
-            try:
-                delta_t = time.time()
-                feature, len, label = val_sess.run(self._validation_next)
-                loss, actual_batch_size, lab, res = sess.run(
-                    [self._total_loss, self._actual_batch_size, tf.argmax(label, axis=2) - 2, self._predict_argmax - 2],
-                    feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
-                )
-                delta_predict = time.time() - delta_t
-                iteration += 1
-                total_loss += loss
-                with tf.device("cpu:0"):
-                    f1 += np.sum(list(map(lambda x: f1_score(x[0], x[1], average="macro"), zip(lab.tolist(), res.tolist()))))
-
-                samples += actual_batch_size
-                delta_f1 = time.time() - delta_t - delta_predict
-                total_time += time.time() - delta_t
-                print("预测时间为:{}, 计算f1时间为{}, 当前f1为{}".format(delta_predict, delta_f1, f1/samples))
-
-            except tf.errors.OutOfRangeError:
-                print("正在计算f1 score, 请稍等")
-                average_f1 = f1 / samples
-                print("验证集运行完毕，平均f1为: {} average_loss is {}, 总耗时为{}秒".format(average_f1, total_loss / iteration, total_time))
-                break
-        val_sess.close()
-
-    def train(self, epoches=10):
-        if not os.path.exists("checkpoint"):
-            os.mkdir("checkpoint")
-
-        with self.graph.as_default():
-            saver = tf.train.Saver(sharded=True)
-        with tf.Session(graph=self.graph) as sess:
-            ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
-            if ckpt and ckpt.model_checkpoint_path:
-                print("正在从{}加载模型".format(ckpt.model_checkpoint_path))
-                saver.restore(sess, ckpt.model_checkpoint_path)
-                self.validation(sess)
-            else:
-                sess.run(tf.global_variables_initializer())
-            writer = tf.summary.FileWriter('graphs/ai_challenger/text_cnn/learning_rate' + str(self._learning_rate), graph=self.graph)
-            initial_step = self.global_step.eval()
-            print("initial_step is {}".format(initial_step))
-            total_loss = 0.0
-            iteration = 0
-            train_next = self._train_iterator.get_next()
-            max_loss_indice = None
-            total_time = 0
-            global_step = initial_step
-            for i in range(initial_step, initial_step + epoches):
-                sess.run(self._train_iterator_initializer)
-                while True:
-                    try:
-                        delta_t = time.time()
-                        feature, len, label = sess.run(train_next)
-                   #     self.validation(sess)
-                        if global_step < 30000 or not max_loss_indice:
-                            _, loss, summary, global_step = sess.run(
-                                [self._train_total, self._total_loss, self._summary_op, self.global_step],
-                                feed_dict={
-                                    self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label
-                                }
-                            )
-                        else:
-                            _, _, loss, summary, max_loss_indice, global_step = sess.run(
-                                [self._train_distribution[max_loss_indice], self._train_total, self._total_loss, self._summary_op, tf.argmax(self._loss, axis=0), self.global_step],
-                                feed_dict={
-                                    self._keep_prob: 0.9, self._feature: feature, self._feature_length: len, self._label: label
-                                }
-                            )
-                        total_loss += loss
-                        iteration = iteration + 1
-                        average_loss = total_loss / iteration
-                        writer.add_summary(summary, global_step=global_step)
-                        total_time += time.time() - delta_t
-                        print("iteration is {}, current_loss is {}, average_loss is {}, total_time is {}, cost time {}sec/batch".format(iteration, loss, average_loss, total_time, total_time / iteration))
-
-                        if global_step % 1000 == 0 and global_step > 20000:
-                            saver.save(sess, save_path="checkpoint/text_cnn", global_step=self.global_step)
-                            self.validation(sess)
-                        if global_step and global_step % 30000 == 0:
-                            self._test(sess, global_step)
-
-                    except tf.errors.OutOfRangeError:
-                        saver.save(sess, save_path="checkpoint/text_cnn", global_step=self.global_step)
-                        break
-
-    def _test(self, sess, global_step):
-        test_next = self._test_iterator.get_next()
-        sess.run(self._test_iterator_initializer, feed_dict={})
-        while True:
-            try:
-                feature, len, label = sess.run(test_next)
-                res = sess.run(
-                    tf.argmax(self._predict, axis=2, output_type=tf.int64) - 2,
-                    feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
-                )
-                self._data.feed_output(res)
-
-            except tf.errors.OutOfRangeError:
-                break
-        self._data.persist("result_{}.csv".format(global_step))
-
-    def test(self):
-        self.build()
-        saver = tf.train.Saver(sharded=True)
-        with tf.Session(graph=self.graph) as sess:
-            ckpt = tf.train.get_checkpoint_state(self._checkpoint_path)
-            if ckpt and ckpt.model_checkpoint_path:
-                saver.restore(sess, ckpt.model_checkpoint_path)
-            else:
-                print("no model!")
-                exit(0)
-            test_next = self._test_iterator.get_next()
-            sess.run(self._test_iterator_initializer, feed_dict={})
-            while True:
-                try:
-                    feature, len, label = sess.run(test_next)
-                    predict = sess.run(
-                        self._predict_argmax - 2, feed_dict={self._keep_prob: 1.0, self._feature: feature, self._feature_length: len, self._label: label}
-                    )
-                    self._data.feed_output(predict)
-
-                except tf.errors.OutOfRangeError:
-                    break
-            self._data.persist()
-
-
-if __name__ == "__main__":
-    Config._use_lemma = False
-    model = TextCNN(sequence_length=3000, filter_sizes=[3, 4, 5], num_filters=256)
-    model.build()
-    model.train(1000)
