@@ -73,7 +73,7 @@ class LookMan(object):
                 line = line.strip("\n")
                 self._box.append(line)
 
-        self._box.append("[LCS]")
+        self._box.append("[CLS]")
         self._box.append("[MASK]")
         self._box.append("[UNK]")
         self._box.append("[SEP]")
