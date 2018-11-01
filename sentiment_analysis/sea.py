@@ -73,6 +73,11 @@ class LookMan(object):
                 line = line.strip("\n")
                 self._box.append(line)
 
+        self._box.append("[LCS]")
+        self._box.append("[MASK]")
+        self._box.append("[UNK]")
+        self._box.append("[SEP]")
+
         k = 0
         for i in self._box:
             if k == num_oov_buckets:
@@ -363,6 +368,25 @@ class Data(object):
                     break
 
 
+def prepare_data_for_bert():
+    f = open("bert_text.data", "w")
+    for i in DataFiles._train_file_names:
+        csv = pd.read_csv(i)
+        for j in csv.iloc[:, 1]:
+            f.write(" ".join(j.strip("\n").strip("\"")))
+            f.write("\n")
+    for i in DataFiles._validation_file_names:
+        csv = pd.read_csv(i)
+        for j in csv.iloc[:, 1]:
+            f.write(" ".join(j.strip("\n").strip("\"")))
+            f.write("\n")
+    for i in DataFiles._test_file_names:
+        csv = pd.read_csv(i)
+        for j in csv.iloc[:, 1]:
+            f.write(" ".join(j.strip("\n").strip("\"")))
+            f.write("\n")
+    f.close()
+
+
 if __name__ == "__main__":
-    d = Data(max_length=30)
-    d.test()
+    prepare_data_for_bert()
