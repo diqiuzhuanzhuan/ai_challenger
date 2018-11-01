@@ -431,8 +431,9 @@ def main(_):
 
 
 if __name__ == "__main__":
-    from sea import prepare_data_for_bert
-    prepare_data_for_bert()
+    import sea
+    sea.prepare_data_for_bert()
+    sea.Data()
     flags.mark_flag_as_required("input_file")
     flags.mark_flag_as_required("output_file")
     flags.mark_flag_as_required("vocab_file")
