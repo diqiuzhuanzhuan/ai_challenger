@@ -23,6 +23,9 @@ import modeling
 import optimization
 import tensorflow as tf
 
+
+os.environ['CUDA_VISIBLE_DEVICES']='0, 1'
+
 flags = tf.flags
 
 FLAGS = flags.FLAGS
