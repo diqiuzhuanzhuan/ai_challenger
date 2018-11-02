@@ -495,5 +495,6 @@ if __name__ == "__main__":
     FLAGS.bert_config_file = "bert.config"
     FLAGS.output_dir = "checkpoint/bert/"
     FLAGS.do_train = True
+    FLAGS.do_eval = True
 
     tf.app.run()
