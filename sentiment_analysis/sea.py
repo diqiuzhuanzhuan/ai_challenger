@@ -73,11 +73,6 @@ class LookMan(object):
                 line = line.strip("\n")
                 self._box.append(line)
 
-        self._box.append("[CLS]")
-        self._box.append("[MASK]")
-        self._box.append("[UNK]")
-        self._box.append("[SEP]")
-
         k = 0
         for i in self._box:
             if k == num_oov_buckets:
@@ -164,6 +159,10 @@ class Data(object):
                 except Exception as e:
                     print(e)
             tf.assert_equal(lines_count, 135000)
+            words.add("[CLS]")
+            words.add("[MASK]")
+            words.add("[UNK]")
+            words.add("[SEP]")
 
             sess.run(tf.write_file(filename=DataFiles._lemma_file, contents="\n".join(words)))
 
@@ -204,7 +203,6 @@ class Data(object):
                     break
                 except Exception as e:
                     print(e)
-            tf.assert_equal(lines_count, 135000)
 
             sess.run(tf.write_file(filename=DataFiles._dict_file, contents="\n".join(words)))
 
