@@ -410,6 +410,7 @@ def _decode_record(record, name_to_features):
 def main(_):
     tf.logging.set_verbosity(tf.logging.INFO)
 
+
     if not FLAGS.do_train and not FLAGS.do_eval:
         raise ValueError("At least one of `do_train` or `do_eval` must be True.")
 
@@ -499,5 +500,4 @@ if __name__ == "__main__":
     FLAGS.output_dir = "checkpoint/bert/"
     FLAGS.do_train = True
     FLAGS.do_eval = True
-
     tf.app.run()
