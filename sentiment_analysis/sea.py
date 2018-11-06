@@ -204,6 +204,11 @@ class Data(object):
                 except Exception as e:
                     print(e)
 
+            words.add("[CLS]")
+            words.add("[MASK]")
+            words.add("[UNK]")
+            words.add("[SEP]")
+
             sess.run(tf.write_file(filename=DataFiles._dict_file, contents="\n".join(words)))
 
             print("字符数一共有:{} ".format(words.__len__()))
