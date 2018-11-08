@@ -16,18 +16,20 @@ from collections import defaultdict
 import numpy as np
 import jieba
 
+base_path = os.path.dirname(os.path.abspath(__file__))
 
 class DataFiles:
-    _train_file_names = ["./data/ai_challenger_sentiment_analysis_trainingset_20180816/sentiment_analysis_trainingset.csv"]
+
+    _train_file_names = [os.path.join(base_path, "./data/ai_challenger_sentiment_analysis_trainingset_20180816/sentiment_analysis_trainingset.csv")]
     #_train_file_names = ["./data/ai_challenger_sentiment_analysis_trainingset_20180816/train.csv"]
     _train_file_url = ["http://www.diqiuzhuanzhuan.com/download/344/"]
-    _validation_file_names = ["./data/ai_challenger_sentiment_analysis_validationset_20180816/sentiment_analysis_validationset.csv"]
+    _validation_file_names = [os.path.join(base_path, "./data/ai_challenger_sentiment_analysis_validationset_20180816/sentiment_analysis_validationset.csv")]
     #_validation_file_names = ["./data/ai_challenger_sentiment_analysis_validationset_20180816/train.csv"]
     _validation_file_url = ["http://www.diqiuzhuanzhuan.com/download/346/"]
-    _test_file_names = ["./data/ai_challenger_sentiment_analysis_testa_20180816/sentiment_analysis_testa.csv"]
+    _test_file_names = [os.path.join(base_path, "./data/ai_challenger_sentiment_analysis_testa_20180816/sentiment_analysis_testa.csv")]
     _test_file_url = ["http://www.diqiuzhuanzhuan.com/download/334/"]
-    _dict_file = "./data/words.dict"
-    _lemma_file = "./data/words.lemma"
+    _dict_file = os.path.join(base_path, "./data/words.dict")
+    _lemma_file = os.path.join(base_path, "./data/words.lemma")
 
     _record_defaults = [tf.constant([0], dtype=tf.int32), tf.constant([], dtype=tf.string), tf.constant([0], dtype=tf.int32),
                         tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32), tf.constant([0], dtype=tf.int32),
@@ -105,7 +107,7 @@ class Data(object):
 
     _will_output = None
     _output_cursor = 0
-    _weight_file = "weight.txt"
+    _weight_file = os.path.join(base_path, "weight.txt")
 
     def __init__(self, batch_size=32, max_length=None):
         self._batch_size = batch_size
@@ -392,4 +394,4 @@ def prepare_data_for_bert():
 
 
 if __name__ == "__main__":
-    prepare_data_for_bert()
+    print(base_path)
