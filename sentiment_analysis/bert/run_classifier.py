@@ -198,6 +198,9 @@ class SentimentProcessor(DataProcessor):
     def get_dev_examples(self, data_dir):
         return self._create_samples(set_type="dev")
 
+    def get_test_examples(self, data_dir):
+        return self._create_samples(set_type="test")
+
     def get_labels(self):
         return [0, 1, 2, 3]
 
@@ -236,7 +239,6 @@ class SentimentProcessor(DataProcessor):
                     examples.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
                     offset += max_length
                     offset = offset - doc_stride
-
 
         return examples
 
@@ -449,6 +451,8 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
     labels = labels[:, 0, :]
     output_layer = tf.reshape(output_layer, [-1, hidden_size])
     length = 20
+    print(output_layer.shape)
+    print(labels.shape)
 
     output_weights = [tf.get_variable(
         "output_weights"+str(i), [num_labels, hidden_size],
@@ -476,6 +480,9 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
         _total_loss = tf.stack(_loss_)
         mean_loss = tf.reduce_mean(_total_loss, axis=0)
         _total_loss = tf.reduce_sum(_total_loss, axis=0)
+        logits = tf.transpose(logits, [1, 0, 2])
+        print("logits shape {}".format(logits.shape))
+        probabilities = tf.transpose(probabilities, [1, 0, 2])
 
         return _total_loss, mean_loss, logits, probabilities
 
@@ -542,6 +549,8 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
 
             def metric_fn(per_example_loss, label_ids, logits):
                 predictions = tf.argmax(logits, axis=-1, output_type=tf.int32)
+                print(label_ids.shape)
+                print(predictions.shape)
                 accuracy = tf.metrics.accuracy(label_ids, predictions)
                 loss = tf.metrics.mean(per_example_loss)
                 return {
@@ -716,12 +725,13 @@ def main(_):
 
     if FLAGS.do_train:
         train_file = os.path.join(FLAGS.output_dir, "train.tf_record")
-        file_based_convert_examples_to_features(
-            train_examples, label_list, FLAGS.max_seq_length, tokenizer, train_file)
-        tf.logging.info("***** Running training *****")
-        tf.logging.info("  Num examples = %d", len(train_examples))
-        tf.logging.info("  Batch size = %d", FLAGS.train_batch_size)
-        tf.logging.info("  Num steps = %d", num_train_steps)
+        if not os.path.exists(train_file):
+            file_based_convert_examples_to_features(
+                train_examples, label_list, FLAGS.max_seq_length, tokenizer, train_file)
+            tf.logging.info("***** Running training *****")
+            tf.logging.info("  Num examples = %d", len(train_examples))
+            tf.logging.info("  Batch size = %d", FLAGS.train_batch_size)
+            tf.logging.info("  Num steps = %d", num_train_steps)
         train_input_fn = file_based_input_fn_builder(
             input_file=train_file,
             seq_length=FLAGS.max_seq_length,
@@ -807,7 +817,7 @@ if __name__ == "__main__":
     FLAGS.bert_config_file = "./checkpoint/bert_config.json"
     FLAGS.output_dir = "./output"
     FLAGS.init_checkpoint = "./checkpoint/bert_model.ckpt"
-    FLAGS.do_train = True
+    FLAGS.do_train = False
     FLAGS.do_eval = True
     FLAGS.doc_stride = 100
     FLAGS.max_seq_length = 512
